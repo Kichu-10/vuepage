@@ -95,7 +95,7 @@
       <section class="jackpot" aria-label="Jackpot">
         <img :src="jackpotDecoration" alt="" class="jackpot-art jackpot-art-left" />
         <img :src="jackpotDecoration" alt="" class="jackpot-art jackpot-art-right" />
-        <h2><Sparkles :size="17" /> JACKPOT <Sparkles :size="17" /></h2>
+        <h2>JACKPOT</h2>
         <p>{{ jackpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
       </section>
 
@@ -209,7 +209,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
   ChevronDown, ChevronLeft, ChevronRight, Fish, Flame, Gift, Home,
-  LogIn, LogOut, Mail, Menu, Plus, Search, Sparkles, Star, UserRound,
+  LogIn, LogOut, Mail, Menu, Plus, Search, Star, UserRound,
   Volume2, Wallet, X,
 } from "@lucide/vue";
 import banner from "./assets/banner.jpg";
@@ -219,7 +219,7 @@ import aviatrix from "./assets/g-aviatrix.jpg";
 import mines from "./assets/g-mines.jpg";
 import fish from "./assets/g-fish.jpg";
 import slot from "./assets/g-slot.jpg";
-import jackpotDecoration from "./assets/jackpot.jpg";
+import jackpotDecoration from "./assets/jackpot-indian-side.jpg";
 
 type Category = "Popular" | "PG Slot" | "Spribe" | "Fishing" | "InOut";
 type Modal = "deposit" | "menu" | "promo" | "profile" | "inbox" | null;
@@ -478,9 +478,8 @@ button { cursor: pointer; }
 .jackpot-art { position: absolute; z-index: 0; top: 0; width: 145px; height: 100%; object-fit: contain; pointer-events: none; }
 .jackpot-art-left { left: -8px; }
 .jackpot-art-right { right: -8px; transform: scaleX(-1); }
-.jackpot h2 { position: relative; z-index: 1; display: flex; align-items: center; gap: 5px; margin: 0; color: #2a9148; font-size: clamp(19px, 6vw, 28px); font-weight: 900; letter-spacing: .5px; line-height: 1.05; }
-.jackpot h2 svg { color: #7bc77e; fill: #7bc77e; }
-.jackpot p { position: relative; z-index: 1; max-width: 70%; margin: 0; padding: 3px 15px 4px; border: 2px solid #e8f0d7; border-radius: 99px; color: #187546; background: #fffef4; box-shadow: 0 2px 7px rgb(52 102 59 / 8%); font-size: clamp(17px, 6.1vw, 29px); font-weight: 850; letter-spacing: .15px; line-height: 1.18; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.jackpot h2 { position: relative; z-index: 1; margin: 0; color: #2a9148; font-size: clamp(19px, 6vw, 28px); font-weight: 900; letter-spacing: .5px; line-height: 1.05; }
+.jackpot p { position: relative; z-index: 1; max-width: 48%; margin: 0; padding: 3px 8px 4px; border: 2px solid #e8f0d7; border-radius: 99px; color: #187546; background: #fffef4; box-shadow: 0 2px 7px rgb(52 102 59 / 8%); font-size: clamp(12px, 4vw, 23px); font-weight: 850; letter-spacing: -.35px; line-height: 1.18; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .games-panel { padding: 9px 7px 10px; border-radius: 18px 18px 0 0; background: white; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 10px; }
 .section-heading h2 { display: flex; align-items: center; gap: 7px; margin: 0; color: #385e46; font-size: 16px; font-weight: 750; }
@@ -561,5 +560,12 @@ button { cursor: pointer; }
   .deposit-button { gap: 0; padding: 0 6px; font-size: 11px; }
   .search-button { width: 22px; }
   .search-button svg { width: 21px; }
+  .content { gap: 8px; padding-right: 7px; padding-left: 7px; }
+  .categories { min-height: 82px; }
+  .category { min-width: 46px; font-size: 11px; }
+  .jackpot { border-radius: 14px; }
+  .jackpot-art { width: 128px; }
+  .jackpot p { max-width: 50%; padding-right: 7px; padding-left: 7px; font-size: 14px; }
+  .game-grid { gap: 6px; }
 }
 </style>
