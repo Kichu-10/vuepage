@@ -93,7 +93,8 @@
       </nav>
 
       <section class="jackpot" aria-label="Jackpot">
-        <img :src="jackpotDecoration" alt="" class="jackpot-art" />
+        <img :src="jackpotDecoration" alt="" class="jackpot-art jackpot-art-left" />
+        <img :src="jackpotDecoration" alt="" class="jackpot-art jackpot-art-right" />
         <h2><Sparkles :size="17" /> JACKPOT <Sparkles :size="17" /></h2>
         <p>{{ jackpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
       </section>
@@ -218,7 +219,7 @@ import aviatrix from "./assets/g-aviatrix.jpg";
 import mines from "./assets/g-mines.jpg";
 import fish from "./assets/g-fish.jpg";
 import slot from "./assets/g-slot.jpg";
-import jackpotDecoration from "./assets/jackpot-flags.svg";
+import jackpotDecoration from "./assets/jackpot.jpg";
 
 type Category = "Popular" | "PG Slot" | "Spribe" | "Fishing" | "InOut";
 type Modal = "deposit" | "menu" | "promo" | "profile" | "inbox" | null;
@@ -474,7 +475,9 @@ button { cursor: pointer; }
 .spribe-mark > .digit-divider { stroke-width: 1; }
 .category-mark.inout { font-size: 23px; font-style: italic; letter-spacing: -3px; }
 .jackpot { position: relative; display: flex; min-height: 98px; flex-direction: column; align-items: center; justify-content: center; gap: 3px; overflow: hidden; border-radius: 18px; background: linear-gradient(110deg, #e1f0e2, #edf6e9 50%, #e1f0e2); }
-.jackpot-art { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.jackpot-art { position: absolute; z-index: 0; top: 0; width: 145px; height: 100%; object-fit: contain; pointer-events: none; }
+.jackpot-art-left { left: -8px; }
+.jackpot-art-right { right: -8px; transform: scaleX(-1); }
 .jackpot h2 { position: relative; z-index: 1; display: flex; align-items: center; gap: 5px; margin: 0; color: #2a9148; font-size: clamp(19px, 6vw, 28px); font-weight: 900; letter-spacing: .5px; line-height: 1.05; }
 .jackpot h2 svg { color: #7bc77e; fill: #7bc77e; }
 .jackpot p { position: relative; z-index: 1; max-width: 70%; margin: 0; padding: 3px 15px 4px; border: 2px solid #e8f0d7; border-radius: 99px; color: #187546; background: #fffef4; box-shadow: 0 2px 7px rgb(52 102 59 / 8%); font-size: clamp(17px, 6.1vw, 29px); font-weight: 850; letter-spacing: .15px; line-height: 1.18; white-space: nowrap; font-variant-numeric: tabular-nums; }
