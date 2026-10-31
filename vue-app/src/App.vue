@@ -70,7 +70,27 @@
             @click="selectCategory(category.label)"
           >
             <span class="category-icon">
-              <component :is="category.icon" v-if="category.icon" :size="category.label === 'Popular' ? 34 : 31" :stroke-width="2.7" />
+              <svg
+                v-if="category.label === 'Popular'"
+                class="popular-mark"
+                viewBox="0 0 42 42"
+                role="img"
+                aria-label="Popular"
+              >
+                <path d="M22.5 3.5c4.1 6.3 1.6 10.4 6.1 14.7 2.8 2.7 5.7 5.7 5.7 10.4C34.3 35 29.1 39 21.4 39 13.7 39 8 34.6 8 27.5c0-4.7 2.2-8.4 6.4-11.4-.2 5 1.8 7.1 4.1 7.3 4.1.3 6.5-4.1 4-9.7-.7-1.6-.5-7.4 0-10.2Z" fill="#20a95a" />
+                <path d="M22 20.8c1.1 4.1-.6 6.4-3.1 7.6 2.9 1.7 6.4 3.2 6.4 6.2 0 1-.3 2-.8 2.8 4.3-.5 6.9-3.3 6.9-7.3 0-3.8-2.4-5.9-4.2-7.7-2-2-2.8-4-5.2-7.1-.2 2.5-.3 3.9 0 5.5Z" fill="#8ed09d" />
+              </svg>
+              <svg
+                v-else-if="category.label === 'PG Slot'"
+                class="pg-slot-mark"
+                viewBox="0 0 42 42"
+                role="img"
+                aria-label="PG Slot"
+              >
+                <circle cx="21" cy="21" r="19.5" fill="#18a657" />
+                <path d="M10 27.8V14h9.2c4.8 0 7.7 2.2 7.7 6 0 3.8-3 6.1-7.9 6.1h-4.5v1.7H10Zm4.5-5.8h4.4c2.1 0 3.3-.7 3.3-2s-1.2-2-3.3-2h-4.4v4Z" fill="#fff" />
+                <path d="M24.4 29.2h8.9v3.5H20.9c0-4.8 2.1-7.2 6.3-8.1l2.9-.6c1.5-.3 2.5-.8 2.5-1.8 0-.9-.7-1.4-2.1-1.4-1.6 0-2.5.7-2.7 2H24c.2-3 2.7-4.8 6.7-4.8 3.8 0 6 1.5 6 4.3 0 2.2-1.5 3.6-4.5 4.3l-3.5.8c-2.4.5-3.7 1.1-4.3 1.8Z" fill="#fff" />
+              </svg>
               <svg
                 v-else-if="category.label === 'Spribe'"
                 class="spribe-mark"
@@ -83,15 +103,17 @@
                 <path class="digit-divider" d="M19 5v18M37 5v18" />
               </svg>
               <svg
-                v-else-if="category.label === 'PG Slot'"
-                class="pg-slot-mark"
+                v-else-if="category.label === 'Fishing'"
+                class="fishing-mark"
                 viewBox="0 0 42 42"
                 role="img"
-                aria-label="PG Slot"
+                aria-label="Fishing"
               >
                 <circle cx="21" cy="21" r="19.5" fill="#18a657" />
-                <path d="M8.5 21C8.5 13.6 13.5 9 21.2 9c5.2 0 9.1 2.1 11.5 5.7l-4.8 3.5c-1.5-2.1-3.8-3.2-6.7-3.2-4.1 0-7 2.3-7 6s2.9 6 7 6c2.9 0 5.2-1.1 6.7-3.2l4.8 3.5c-2.4 3.6-6.3 5.7-11.5 5.7-7.7 0-12.7-4.6-12.7-12Z" fill="#fff" />
-                <path d="M18.5 14.5h7.1c3.7 0 6.2 1.8 6.2 5.1 0 3.4-2.5 5.1-6.2 5.1h-2.8v4.8h-4.3V14.5Zm4.3 3.7v3h2.2c1.4 0 2.2-.5 2.2-1.5s-.8-1.5-2.2-1.5h-2.2Z" fill="#18a657" />
+                <path d="M10 22c3.7-5.1 9.2-7 15-5.1 4.1 1.4 7.1 4.5 8.8 7.1-2.2 2.6-5.6 5.2-9.5 5.9-5.7.9-10.6-1.3-14.3-7.9Z" fill="#fff" />
+                <path d="m10 21-5.5-4.2v10L10 23Z" fill="#fff" />
+                <circle cx="25.1" cy="20.5" r="1.5" fill="#18a657" />
+                <path d="M20 17.2c-2.1 1.5-3.3 3.1-3.7 5.1M22 27c1.5-.6 2.8-1.5 3.9-2.6" fill="none" stroke="#18a657" stroke-width="1.2" />
               </svg>
               <span v-else-if="category.mark" class="category-mark" :class="category.label.toLowerCase().replace(' ', '-')">
                 {{ category.mark }}
@@ -219,7 +241,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
-  ChevronDown, ChevronLeft, ChevronRight, Fish, Flame, Gift, Home,
+  ChevronDown, ChevronLeft, ChevronRight, Flame, Gift, Home,
   LogIn, LogOut, Mail, Menu, Plus, Search, Star, UserRound,
   Volume2, Wallet, X,
 } from "@lucide/vue";
@@ -246,10 +268,10 @@ type Game = {
 
 const categories: Category[] = ["Popular", "PG Slot", "Spribe", "Fishing", "InOut"];
 const categoryItems = [
-  { label: "Popular" as const, icon: Flame },
-  { label: "PG Slot" as const, mark: "PG" },
-  { label: "Spribe" as const, mark: "777" },
-  { label: "Fishing" as const, icon: Fish },
+  { label: "Popular" as const },
+  { label: "PG Slot" as const },
+  { label: "Spribe" as const },
+  { label: "Fishing" as const },
   { label: "InOut" as const, mark: "iN" },
 ];
 const games: Game[] = [
@@ -476,6 +498,8 @@ button { cursor: pointer; }
 .category-list::-webkit-scrollbar { display: none; }
 .category { display: flex; min-width: 51px; flex: 1; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; padding: 0; border: 0; color: #707b73; background: none; font-size: 12px; }
 .category-icon { display: grid; height: 39px; place-items: center; color: #16994d; }
+.popular-mark { width: 34px; height: 34px; }
+.fishing-mark { width: 36px; height: 36px; filter: drop-shadow(0 2px 2px rgb(21 142 74 / 12%)); }
 .category:first-child .category-icon svg { fill: currentColor; stroke: #16994d; }
 .category-label { padding: 0 3px 5px; border-bottom: 2px solid transparent; white-space: nowrap; }
 .category.selected .category-label { border-color: #27a95c; color: #315940; font-weight: 700; }
