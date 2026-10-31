@@ -82,6 +82,17 @@
                 <path d="M6 8h10l-5 12M23 8h10l-5 12M40 8h10l-5 12" />
                 <path class="digit-divider" d="M19 5v18M37 5v18" />
               </svg>
+              <svg
+                v-else-if="category.label === 'PG Slot'"
+                class="pg-slot-mark"
+                viewBox="0 0 42 42"
+                role="img"
+                aria-label="PG Slot"
+              >
+                <circle cx="21" cy="21" r="19.5" fill="#18a657" />
+                <path d="M8.5 21C8.5 13.6 13.5 9 21.2 9c5.2 0 9.1 2.1 11.5 5.7l-4.8 3.5c-1.5-2.1-3.8-3.2-6.7-3.2-4.1 0-7 2.3-7 6s2.9 6 7 6c2.9 0 5.2-1.1 6.7-3.2l4.8 3.5c-2.4 3.6-6.3 5.7-11.5 5.7-7.7 0-12.7-4.6-12.7-12Z" fill="#fff" />
+                <path d="M18.5 14.5h7.1c3.7 0 6.2 1.8 6.2 5.1 0 3.4-2.5 5.1-6.2 5.1h-2.8v4.8h-4.3V14.5Zm4.3 3.7v3h2.2c1.4 0 2.2-.5 2.2-1.5s-.8-1.5-2.2-1.5h-2.2Z" fill="#18a657" />
+              </svg>
               <span v-else-if="category.mark" class="category-mark" :class="category.label.toLowerCase().replace(' ', '-')">
                 {{ category.mark }}
               </span>
@@ -474,6 +485,7 @@ button { cursor: pointer; }
 .spribe-mark > path:not(.digit-divider) { stroke-width: 2.8; }
 .spribe-mark > .digit-divider { stroke-width: 1; }
 .category-mark.inout { font-size: 23px; font-style: italic; letter-spacing: -3px; }
+.pg-slot-mark { width: 34px; height: 34px; filter: drop-shadow(0 2px 2px rgb(21 142 74 / 12%)); }
 .jackpot { position: relative; display: flex; min-height: 98px; flex-direction: column; align-items: center; justify-content: center; gap: 3px; overflow: hidden; border-radius: 18px; background: linear-gradient(110deg, #e1f0e2, #edf6e9 50%, #e1f0e2); }
 .jackpot-art { position: absolute; z-index: 0; top: 0; width: 145px; height: 100%; object-fit: contain; pointer-events: none; }
 .jackpot-art-left { left: -8px; }
