@@ -5,10 +5,7 @@
         <Menu :size="25" :stroke-width="2.4" />
       </button>
       <a class="brand" href="#" aria-label="B9 Game home" @click.prevent="goHome">
-        <svg class="brand-emblem" viewBox="0 0 42 46" role="img" aria-label="Crowned 9">
-          <path d="M7 12 3 5l8 3 5-7 5 7 8-3-4 8" fill="#fff" />
-          <path d="M12 17c0-6 4-10 11-10 9 0 14 7 14 17 0 12-7 19-17 19-5 0-9-2-12-5l5-6c2 2 4 3 7 3 5 0 8-4 9-10-2 3-5 4-9 4-6 0-11-4-11-12Zm10 0c0 3 2 5 5 5s5-2 5-5-2-5-5-5-5 2-5 5Z" fill="#fff" />
-        </svg>
+        <img :src="brandLogo" class="brand-emblem" alt="B9 Game logo" />
         <span class="brand-wordmark">B9 Game</span>
       </a>
 
@@ -253,6 +250,7 @@ import mines from "./assets/g-mines.jpg";
 import fish from "./assets/g-fish.jpg";
 import slot from "./assets/g-slot.jpg";
 import jackpotDecoration from "./assets/jackpot-indian-side.jpg";
+import brandLogo from "./assets/brand-logo.jpg";
 
 type Category = "Popular" | "PG Slot" | "Spribe" | "Fishing" | "InOut";
 type Modal = "deposit" | "menu" | "promo" | "profile" | "inbox" | null;
@@ -439,7 +437,7 @@ button { cursor: pointer; }
 .header-icon { display: grid; flex: 0 0 auto; place-items: center; padding: 0; border: 0; color: inherit; background: none; }
 .menu-button { width: 25px; }
 .brand { display: flex; min-width: 0; flex: 0 1 auto; align-items: center; gap: 1px; color: white; text-decoration: none; }
-.brand-emblem { width: 37px; height: 42px; flex: 0 0 auto; }
+.brand-emblem { width: 37px; height: 42px; flex: 0 0 auto; object-fit: cover; object-position: center; border-radius: 4px; }
 .brand-wordmark { white-space: nowrap; font-size: clamp(15px, 4.3vw, 20px); font-weight: 850; letter-spacing: -.7px; }
 .header-actions { display: flex; min-width: 0; flex: 1; align-items: center; justify-content: flex-end; gap: 5px; }
 .balance-button, .deposit-button {
