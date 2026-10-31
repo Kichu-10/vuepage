@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 112" fill="none">
+  <defs>
+    <linearGradient id="gold" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#fff5a8"/>
+      <stop offset=".48" stop-color="#e4a927"/>
+      <stop offset="1" stop-color="#a96c10"/>
+    </linearGradient>
+    <linearGradient id="bill" x1="0" x2="0" y1="0" y2="1">
+      <stop stop-color="#f8fff8"/>
+      <stop offset="1" stop-color="#bed7c1"/>
+    </linearGradient>
+  </defs>
+  <g id="jackpot-side">
+    <g stroke="url(#gold)" stroke-width="2.5">
+      <path d="M25 92V13m0 8 8 5"/>
+      <path d="M21 13h8"/>
+    </g>
+    <path d="M33 22 86 28v31c-15 6-37 2-53-7z" fill="#08783d"/>
+    <path d="M44 27 57 29l-2 26-11-1z" fill="#fff"/>
+    <path d="M58 39a9 9 0 1 0 13-9 7 7 0 1 1-13 9Z" fill="#fff"/>
+    <path d="m73 32 1.8 3.6 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4-2.9-2.8 4-.6z" fill="#fff"/>
+    <g fill="url(#gold)" stroke="#b57b18" stroke-width="1">
+      <ellipse cx="16" cy="96" rx="13" ry="4"/><path d="M3 89h26v7H3z"/><ellipse cx="16" cy="89" rx="13" ry="4"/>
+      <ellipse cx="39" cy="103" rx="12" ry="4"/><path d="M27 97h24v6H27z"/><ellipse cx="39" cy="97" rx="12" ry="4"/>
+      <ellipse cx="65" cy="106" rx="11" ry="3.5"/><path d="M54 100h22v6H54z"/><ellipse cx="65" cy="100" rx="11" ry="3.5"/>
+    </g>
+    <g stroke="#86a98b" stroke-width="1">
+      <path d="m3 82 43-12 57 15-46 13z" fill="url(#bill)"/>
+      <path d="M3 82v8l54 15v-7z" fill="#d5e5d7"/>
+      <path d="m57 98 46-13v8l-46 12z" fill="#b9d1bc"/>
+      <path d="m12 74 40-11 45 12-42 12z" fill="url(#bill)"/>
+      <path d="m52 75 4 1v7l-4 1z" fill="#4a9b5b"/>
+    </g>
+    <path d="M31 80q12-9 24 0-12 9-24 0Z" stroke="#68a575" stroke-width="1.5"/>
+    <path d="M39 77h8m-8 3h8m-8 3h8" stroke="#68a575" stroke-width="1"/>
+  </g>
+  <use href="#jackpot-side" transform="translate(360 0) scale(-1 1)"/>
+  <g fill="#4ba45d" opacity=".8">
+    <path d="m111 17 2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/>
+    <path d="m249 17 2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/>
+  </g>
+</svg>
