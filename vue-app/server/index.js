@@ -13,6 +13,7 @@ import twilio from "twilio";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { readDb, writeDb } from "./database.js";
 
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env.local") });
 
@@ -27,8 +28,6 @@ if (isProduction && !process.env.ADMIN_PASSWORD) {
   throw new Error("ADMIN_PASSWORD is required in production");
 }
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataFile = path.join(__dirname, "database.json");
-
 app.use(express.json({ limit: "1mb" }));
 app.use(helmet({ crossOriginResourcePolicy: { policy: "same-site" } }));
 app.use("/api/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, standardHeaders: true, legacyHeaders: false }));
@@ -72,19 +71,6 @@ const upload = multer({
     callback(null, ["image/jpeg", "image/png", "application/pdf"].includes(file.mimetype));
   },
 });
-
-function readDb() {
-  if (!fs.existsSync(dataFile)) {
-    fs.writeFileSync(dataFile, JSON.stringify({ users: [], transactions: [], otps: [] }, null, 2));
-  }
-  return JSON.parse(fs.readFileSync(dataFile, "utf8"));
-}
-
-function writeDb(db) {
-  const tempFile = `${dataFile}.tmp`;
-  fs.writeFileSync(tempFile, JSON.stringify(db, null, 2));
-  fs.renameSync(tempFile, dataFile);
-}
 
 function addAudit(db, adminUsername, action, target, details = "") {
   db.auditLogs ||= [];
@@ -506,26 +492,34 @@ app.post("/api/wallet/request", auth, upload.single("proof"), (req, res) => {
   const type = req.body.type === "withdrawal" ? "withdrawal" : "deposit";
   const amount = Number(req.body.amount);
   if (!Number.isFinite(amount) || amount < 100) return res.status(400).json({ error: "Minimum amount is Rs. 100" });
+  if (amount > 100000000) return res.status(400).json({ error: "Amount is too large" });
+  const roundedAmount = Number(amount.toFixed(2));
   const paymentReference = String(req.body.paymentReference || "").trim();
   const paymentNote = String(req.body.paymentNote || "").trim();
   const paymentMethod = String(req.body.paymentMethod || "").trim();
-  if (!paymentReference) return res.status(400).json({ error: "Payment reference is required" });
   if (type === "deposit" && !req.file) return res.status(400).json({ error: "Payment receipt or screenshot is required" });
+  if (type === "deposit" && !paymentReference) return res.status(400).json({ error: "Payment reference is required" });
   const db = readDb();
   const user = db.users.find((item) => item.id === req.user.id);
   if (!user || user.status !== "active") return res.status(403).json({ error: "Account unavailable" });
   if (type === "withdrawal") {
+    if ((user.kycStatus || "not_submitted") !== "verified") {
+      return res.status(403).json({ error: "Complete KYC verification before requesting a withdrawal" });
+    }
+    if (!paymentMethod) return res.status(400).json({ error: "Withdrawal destination is required" });
+    if (!paymentNote || paymentNote.length < 6) return res.status(400).json({ error: "Enter valid bank, UPI, or wallet account details" });
     const reserved = db.transactions
       .filter((item) => item.userId === user.id && item.type === "withdrawal" && item.status === "pending")
       .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    if (user.balance - reserved < amount) return res.status(400).json({ error: "Insufficient available balance" });
+    const availableBalance = Number((Number(user.balance || 0) - reserved).toFixed(2));
+    if (availableBalance < roundedAmount) return res.status(400).json({ error: "Insufficient available balance" });
   }
   db.transactions.unshift({
     id: randomUUID(),
     userId: user.id,
     username: user.username,
     type,
-    amount,
+    amount: roundedAmount,
     status: "pending",
     paymentMethod,
     paymentReference,

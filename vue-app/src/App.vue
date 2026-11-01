@@ -4,8 +4,8 @@
       <button class="header-icon menu-button" aria-label="Open menu" @click="modal = 'menu'">
         <Menu :size="25" :stroke-width="2.4" />
       </button>
-      <a class="brand" href="#" aria-label="B9 Game home" @click.prevent="goHome">
-        <img :src="brandLogo" class="brand-emblem" alt="B9 Game logo" />
+      <a class="public-brand" href="#" aria-label="B9 Game home" @click.prevent="goHome">
+        <img :src="b9Logo" class="brand-emblem" alt="B9" />
         <span class="brand-wordmark">B9 Game</span>
       </a>
 
@@ -82,10 +82,8 @@
       </nav>
 
       <section class="jackpot" aria-label="Jackpot">
-        <img :src="jackpotDecoration" alt="" class="jackpot-art jackpot-art-left" />
-        <img :src="jackpotDecoration" alt="" class="jackpot-art jackpot-art-right" />
-        <h2>JACKPOT</h2>
-        <p>{{ jackpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
+        <img :src="jackpotBanner" alt="JACKPOT" class="jackpot-banner" />
+        <div class="jackpot-value">{{ jackpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
       </section>
 
       <section class="games-panel">
@@ -175,7 +173,13 @@
             class="amount-input"
             :placeholder="walletRequestType === 'deposit' ? 'Payment method (bank, UPI, wallet)' : 'Withdrawal destination (bank, UPI, wallet)'"
           />
-          <input v-model="paymentReference" class="amount-input" placeholder="Transaction or payment reference" required />
+          <input
+            v-if="walletRequestType === 'deposit'"
+            v-model="paymentReference"
+            class="amount-input"
+            placeholder="Transaction or payment reference"
+            required
+          />
           <textarea
             v-model="paymentNote"
             class="manual-note"
@@ -365,8 +369,8 @@ import aviatrix from "./assets/g-aviatrix.jpg";
 import mines from "./assets/g-mines.jpg";
 import fish from "./assets/g-fish.jpg";
 import slot from "./assets/g-slot.jpg";
-import jackpotDecoration from "./assets/jackpot-indian-side.jpg";
-import brandLogo from "./assets/brand-logo.jpg";
+import b9Logo from "./assets/b9-logo.jpg";
+import jackpotBanner from "./assets/jackpot-banner.jpg";
 import popularCategory from "./assets/01_popular.png";
 import pgSlotCategory from "./assets/02_pg_slot.png";
 import spribeCategory from "./assets/03_spribe.png";
@@ -659,10 +663,18 @@ async function play(name: string): Promise<void> {
 async function submitWalletRequest(): Promise<void> {
   const value = Number(amount.value);
   if (!value || value < 100) {
-    notify("Minimum deposit is Rs. 100");
+    notify(`Minimum ${walletRequestType.value === "deposit" ? "deposit" : "withdrawal"} is Rs. 100`);
     return;
   }
-  if (!paymentReference.value.trim()) {
+  if (!paymentMethod.value.trim()) {
+    notify(walletRequestType.value === "withdrawal" ? "Enter your withdrawal destination" : "Enter the payment method");
+    return;
+  }
+  if (walletRequestType.value === "withdrawal" && paymentNote.value.trim().length < 6) {
+    notify("Enter valid bank, UPI, or wallet account details");
+    return;
+  }
+  if (walletRequestType.value === "deposit" && !paymentReference.value.trim()) {
     notify("Enter the payment or transaction reference");
     return;
   }
@@ -923,9 +935,34 @@ button { cursor: pointer; }
 }
 .header-icon { display: grid; flex: 0 0 auto; place-items: center; padding: 0; border: 0; color: inherit; background: none; }
 .menu-button { width: 25px; }
-.brand { display: flex; min-width: 0; flex: 0 1 auto; align-items: center; gap: 1px; color: white; text-decoration: none; }
-.brand-emblem { width: 37px; height: 42px; flex: 0 0 auto; object-fit: cover; object-position: center; border-radius: 4px; }
-.brand-wordmark { white-space: nowrap; font-size: clamp(15px, 4.3vw, 20px); font-weight: 850; letter-spacing: -.7px; }
+.public-brand {
+  display: flex;
+  width: 112px;
+  min-width: 112px;
+  height: 48px;
+  flex: 0 0 112px;
+  align-items: center;
+  gap: 6px;
+  color: white;
+  text-decoration: none;
+}
+.brand-emblem {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  object-fit: contain;
+}
+.brand-wordmark {
+  display: block;
+  overflow: visible;
+  white-space: nowrap;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -.6px;
+}
 .header-actions { display: flex; min-width: 0; flex: 1; align-items: center; justify-content: flex-end; gap: 5px; }
 .balance-button, .deposit-button {
   display: flex;
@@ -995,12 +1032,37 @@ button { cursor: pointer; }
 .spribe-mark > .digit-divider { stroke-width: 1; }
 .category-mark.inout { font-size: 23px; font-style: italic; letter-spacing: -3px; }
 .pg-slot-mark { width: 34px; height: 34px; filter: drop-shadow(0 2px 2px rgb(21 142 74 / 12%)); }
-.jackpot { position: relative; display: flex; min-height: 98px; flex-direction: column; align-items: center; justify-content: center; gap: 3px; overflow: hidden; border-radius: 18px; background: linear-gradient(110deg, #e1f0e2, #edf6e9 50%, #e1f0e2); }
-.jackpot-art { position: absolute; z-index: 0; top: 0; width: 145px; height: 100%; object-fit: contain; pointer-events: none; }
-.jackpot-art-left { left: -8px; }
-.jackpot-art-right { right: -8px; transform: scaleX(-1); }
-.jackpot h2 { position: relative; z-index: 1; margin: 0; color: #2a9148; font-size: clamp(19px, 6vw, 28px); font-weight: 900; letter-spacing: .5px; line-height: 1.05; }
-.jackpot p { position: relative; z-index: 1; max-width: 48%; margin: 0; padding: 3px 8px 4px; border: 2px solid #e8f0d7; border-radius: 99px; color: #187546; background: #fffef4; box-shadow: 0 2px 7px rgb(52 102 59 / 8%); font-size: clamp(12px, 4vw, 23px); font-weight: 850; letter-spacing: -.35px; line-height: 1.18; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.jackpot {
+  position: relative;
+  aspect-ratio: 3.16 / 1;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #eef8ee;
+  box-shadow: 0 4px 12px rgb(38 124 69 / 7%);
+}
+.jackpot-banner {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  object-position: center;
+}
+.jackpot-value {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: 24%;
+  width: 52%;
+  padding: 3px 6px;
+  transform: translateX(-50%);
+  color: #17683a;
+  font-size: clamp(13px, 4vw, 21px);
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 .games-panel { padding: 9px 7px 10px; border-radius: 18px 18px 0 0; background: white; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 10px; }
 .section-heading h2 { display: flex; align-items: center; gap: 7px; margin: 0; color: #385e46; font-size: 16px; font-weight: 750; }
@@ -1144,7 +1206,7 @@ button { cursor: pointer; }
     border-radius: 24px 24px 0 0;
   }
   .topbar { height: 72px; padding: 8px 24px 12px; border-radius: 24px 24px 0 0; }
-  .brand-emblem { width: 45px; height: 48px; }
+  .brand-emblem { width: 44px; height: 44px; flex-basis: 44px; }
   .brand-wordmark { font-size: 21px; }
   .header-actions { max-width: 420px; gap: 8px; }
   .balance-button, .deposit-button { height: 42px; }
@@ -1156,8 +1218,6 @@ button { cursor: pointer; }
   .categories { min-height: 104px; padding-right: 18px; padding-left: 18px; }
   .category { max-width: 130px; }
   .category-image { width: 50px; height: 50px; }
-  .jackpot { min-height: 130px; }
-  .jackpot-art { width: 220px; }
   .game-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
   .game-card { border-radius: 18px; }
   .games-panel { padding: 16px 14px 14px; }
@@ -1171,8 +1231,8 @@ button { cursor: pointer; }
 @media (max-width: 370px) {
   .topbar { gap: 4px; padding-right: 8px; padding-left: 8px; }
   .menu-button { width: 23px; }
-  .brand-emblem { width: 31px; }
-  .brand-wordmark { font-size: 15px; }
+  .brand-emblem { width: 34px; height: 34px; flex-basis: 34px; }
+  .brand-wordmark { font-size: 14px; }
   .header-actions { gap: 4px; }
   .balance-button { gap: 4px; padding: 0 5px; }
   .deposit-button { gap: 0; padding: 0 6px; font-size: 11px; }
@@ -1182,8 +1242,7 @@ button { cursor: pointer; }
   .categories { min-height: 82px; }
   .category { min-width: 46px; font-size: 11px; }
   .jackpot { border-radius: 14px; }
-  .jackpot-art { width: 128px; }
-  .jackpot p { max-width: 50%; padding-right: 7px; padding-left: 7px; font-size: 14px; }
+  .jackpot-value { bottom: 24%; font-size: 12px; }
   .game-grid { gap: 6px; }
 }
 </style>
