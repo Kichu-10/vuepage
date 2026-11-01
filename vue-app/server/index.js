@@ -474,6 +474,14 @@ app.post("/api/wallet/request", auth, (req, res) => {
   res.status(201).json({ message: `${type === "deposit" ? "Deposit" : "Withdrawal"} request submitted`, balance: user.balance });
 });
 
+app.get("/api/wallet/transactions", auth, (req, res) => {
+  const db = readDb();
+  const transactions = db.transactions
+    .filter((item) => item.userId === req.user.id)
+    .slice(0, 100);
+  res.json({ transactions });
+});
+
 app.get("/api/admin/stats", auth, admin, (req, res) => {
   const db = readDb();
   const pending = db.transactions.filter((item) => item.status === "pending").length;

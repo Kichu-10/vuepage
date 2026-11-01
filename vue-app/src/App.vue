@@ -190,10 +190,58 @@
         </form>
 
         <ul v-else-if="modal === 'menu'" class="menu-list">
+          <li class="menu-section-label">My account</li>
+          <li><button @click="openProfile"><UserRound :size="20" />Profile &amp; account</button></li>
+          <li><button @click="openDeposit"><Wallet :size="20" />Deposit &amp; withdraw</button></li>
+          <li><button @click="openTransactionHistory"><Mail :size="20" />Transaction history</button></li>
+          <li><button @click="openKyc"><UserRound :size="20" />KYC verification</button></li>
+          <li class="menu-section-label">Discover</li>
+          <li><button @click="showFavorites"><Star :size="20" />My favorites</button></li>
+          <li><button @click="modal = 'promo'"><Gift :size="20" />Promotions</button></li>
+          <li><button @click="modal = 'inbox'"><Mail :size="20" />Inbox</button></li>
+          <li class="menu-section-label">Game categories</li>
           <li v-for="category in categories" :key="category">
             <button @click="selectCategory(category); modal = null"><Flame :size="20" />{{ category }}</button>
           </li>
+          <li class="menu-section-label">Support</li>
+          <li><button @click="modal = 'support'"><Mail :size="20" />Help &amp; support</button></li>
+          <li v-if="signedIn"><button @click="toggleSignIn"><LogOut :size="20" />Sign out</button></li>
         </ul>
+
+        <div v-else-if="modal === 'transactions'" class="modal-content transaction-list">
+          <p v-if="transactionLoading" class="bonus-note">Loading transaction history...</p>
+          <p v-else-if="walletTransactions.length === 0" class="empty-state">No wallet transactions yet.</p>
+          <article v-for="transaction in walletTransactions" :key="transaction.id" class="transaction-card">
+            <div>
+              <strong>{{ transaction.type === "deposit" ? "Deposit" : "Withdrawal" }}</strong>
+              <small>{{ formatDate(transaction.createdAt) }}</small>
+            </div>
+            <div class="transaction-result">
+              <strong>Rs. {{ formatMoney(transaction.amount) }}</strong>
+              <span :class="transaction.status">{{ transaction.status }}</span>
+            </div>
+          </article>
+        </div>
+
+        <div v-else-if="modal === 'favorites'" class="modal-content favorites-list">
+          <p v-if="favoriteNames === 'None yet'" class="empty-state">You have no favorite games yet.</p>
+          <button
+            v-for="game in games.filter((item) => favorites.includes(item.id))"
+            :key="game.id"
+            class="favorite-game"
+            @click="play(game.name); modal = null"
+          >
+            <img :src="game.img" :alt="game.name" />
+            <span><strong>{{ game.name }}</strong><small>{{ game.brand }}</small></span>
+          </button>
+        </div>
+
+        <div v-else-if="modal === 'support'" class="modal-content support-content">
+          <p>For account, deposit, withdrawal, or KYC help:</p>
+          <button class="support-row" @click="modal = 'inbox'"><Mail :size="20" /><span><strong>Message center</strong><small>View account notices</small></span></button>
+          <button class="support-row" @click="openKyc"><UserRound :size="20" /><span><strong>KYC assistance</strong><small>Review document requirements</small></span></button>
+          <button class="support-row" @click="modal = 'profile'"><UserRound :size="20" /><span><strong>Account details</strong><small>Review your profile</small></span></button>
+        </div>
 
         <div v-else-if="modal === 'promo'" class="modal-content promo-list">
           <article v-for="promotion in slides" :key="promotion.sub" class="promo-card">
@@ -276,8 +324,9 @@ import fishingCategory from "./assets/04_fishing.png";
 import inOutCategory from "./assets/05_inout.png";
 
 type Category = "Popular" | "PG Slot" | "Spribe" | "Fishing" | "InOut";
-type Modal = "deposit" | "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | null;
+type Modal = "deposit" | "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | "transactions" | "favorites" | "support" | null;
 type AuthUser = { id: string; username: string; phone: string; email: string; country: string; kycStatus: string; role: "user" | "admin"; balance: number; status: string; createdAt: string; lastLoginAt: string | null };
+type WalletTransaction = { id: string; type: "deposit" | "withdrawal"; amount: number; status: string; createdAt: string };
 type Game = {
   id: number;
   name: string;
@@ -345,6 +394,8 @@ const kycAddress = ref("");
 const kycLoading = ref(false);
 const kycFiles = ref<Record<string, File | undefined>>({});
 const walletRequestType = ref<"deposit" | "withdrawal">("deposit");
+const walletTransactions = ref<WalletTransaction[]>([]);
+const transactionLoading = ref(false);
 let slideTimer: ReturnType<typeof setInterval> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let googleScriptPromise: Promise<void> | undefined;
@@ -368,6 +419,11 @@ const modalTitle = computed(() => {
   if (modal.value === "promo") return "Promotions";
   if (modal.value === "auth") return authMode.value === "login" ? "Sign In" : "Create Account";
   if (modal.value === "kyc") return "KYC Verification";
+  if (modal.value === "transactions") return "Transaction History";
+  if (modal.value === "favorites") return "My Favorites";
+  if (modal.value === "support") return "Help & Support";
+  if (modal.value === "profile") return "Profile & Account";
+  if (modal.value === "menu") return "Menu";
   return modal.value ?? "";
 });
 const favoriteNames = computed(() => {
@@ -417,6 +473,10 @@ async function restoreSession(): Promise<void> {
 
 function formatMoney(value: number): string {
   return value.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+}
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Unknown date" : date.toLocaleString();
 }
 function notify(message: string): void {
   notice.value = message;
@@ -633,6 +693,27 @@ function toggleSignIn(): void {
 function openProfile(): void {
   if (!requireSignIn()) modal.value = "profile";
 }
+async function openTransactionHistory(): Promise<void> {
+  if (requireSignIn()) return;
+  modal.value = "transactions";
+  transactionLoading.value = true;
+  try {
+    const data = await api("/api/wallet/transactions");
+    walletTransactions.value = data.transactions || [];
+  } catch (error) {
+    walletTransactions.value = [];
+    notify(error instanceof Error ? error.message : "Could not load transaction history");
+  } finally {
+    transactionLoading.value = false;
+  }
+}
+function openKyc(): void {
+  if (requireSignIn()) return;
+  modal.value = "kyc";
+}
+function showFavorites(): void {
+  modal.value = "favorites";
+}
 function goHome(): void {
   modal.value = null;
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -809,12 +890,40 @@ button { cursor: pointer; }
 .menu-list li + li, .message-list li + li { margin-top: 5px; }
 .menu-list button { display: flex; width: 100%; align-items: center; gap: 12px; padding: 10px; border: 0; border-radius: 9px; color: #355342; text-align: left; background: white; }
 .menu-list button:hover { background: #e5f3e3; }
+.menu-list .menu-section-label {
+  margin: 6px 4px 2px;
+  padding: 0;
+  color: #89958d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
 .promo-list { gap: 8px; }
 .promo-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px; border-radius: 12px; background: #e5f3e3; }
 .promo-card p { margin: 3px 0 0; color: #707b73; font-size: 12px; }
 .promo-card .primary-button { padding: 7px 12px; font-size: 12px; }
 .profile-info p { margin: 0; font-size: 14px; }
 .message-list li { padding: 12px; border-radius: 10px; background: #e5f3e3; font-size: 13px; }
+.transaction-list { max-height: 420px; overflow-y: auto; }
+.transaction-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 11px; background: #edf5ef; }
+.transaction-card > div { display: flex; flex-direction: column; gap: 3px; }
+.transaction-card small { color: #7b887f; font-size: 11px; }
+.transaction-result { align-items: flex-end; }
+.transaction-result span { border-radius: 999px; padding: 3px 7px; font-size: 10px; text-transform: capitalize; background: #e7ece8; }
+.transaction-result span.approved { color: #1d7a40; background: #d9f0df; }
+.transaction-result span.rejected { color: #a33a3a; background: #f4dddd; }
+.transaction-result span.pending { color: #886b20; background: #f5eccb; }
+.favorites-list { gap: 8px; }
+.favorite-game { display: flex; width: 100%; align-items: center; gap: 10px; padding: 8px; border: 1px solid #dce5de; border-radius: 11px; text-align: left; background: white; }
+.favorite-game img { width: 54px; height: 54px; border-radius: 9px; object-fit: cover; }
+.favorite-game span { display: flex; flex-direction: column; }
+.favorite-game small { color: #839087; }
+.support-content { gap: 8px; }
+.support-content > p { margin: 0; color: #667469; font-size: 13px; }
+.support-row { display: flex; width: 100%; align-items: center; gap: 10px; padding: 11px; border: 0; border-radius: 10px; text-align: left; background: #edf5ef; color: #355342; }
+.support-row span { display: flex; flex-direction: column; }
+.support-row small { color: #829087; }
 .toast { position: fixed; z-index: 20; bottom: 88px; left: 50%; max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 99px; color: white; background: #27382b; box-shadow: 0 4px 16px rgb(0 0 0 / 20%); text-align: center; font-size: 13px; transform: translateX(-50%); }
 .wallet-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .wallet-tabs button { padding: 10px; border: 1px solid #d5ded6; border-radius: 10px; color: #536358; background: white; }
