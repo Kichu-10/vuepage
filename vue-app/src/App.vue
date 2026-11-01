@@ -165,28 +165,10 @@
             <button type="button" :class="{ active: authMode === 'login' }" @click="authMode = 'login'">Sign In</button>
             <button type="button" :class="{ active: authMode === 'register' }" @click="authMode = 'register'">Register</button>
           </div>
-          <button v-if="authMode === 'login'" type="button" class="google-button" @click="googleLogin">
-            Continue with Google
-          </button>
+          <div v-if="authMode === 'login'" id="google-signin-button" class="google-signin-button" />
           <input v-model="authUsername" autocomplete="username" placeholder="Username" aria-label="Username" required minlength="3" />
           <template v-if="authMode === 'register'">
-            <select v-model="authCountry" aria-label="Country" required>
-              <option value="">Select country</option>
-              <option value="NP">Nepal</option>
-              <option value="IN">India</option>
-            </select>
             <input v-model="authEmail" type="email" autocomplete="email" placeholder="Gmail or email address" aria-label="Email address" required />
-            <div class="verification-row">
-              <button type="button" class="secondary-button" @click="sendOtp('email')">Email Code</button>
-              <input v-model="emailOtp" inputmode="numeric" maxlength="6" placeholder="Email OTP" aria-label="Email OTP" />
-              <button type="button" class="verify-button" @click="verifyOtp('email')">Verify</button>
-            </div>
-            <input v-model="authPhone" autocomplete="tel" placeholder="Phone with country code (+977... or +91...)" aria-label="Phone number" required />
-            <div class="verification-row">
-              <button type="button" class="secondary-button" @click="sendOtp('sms')">SMS Code</button>
-              <input v-model="phoneOtp" inputmode="numeric" maxlength="6" placeholder="SMS OTP" aria-label="SMS OTP" />
-              <button type="button" class="verify-button" @click="verifyOtp('sms')">Verify</button>
-            </div>
           </template>
           <input v-model="authPassword" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password" required minlength="6" />
           <button class="primary-button full-button" type="submit" :disabled="authLoading">
@@ -259,12 +241,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   ChevronDown, ChevronLeft, ChevronRight, Flame, Gift, Home,
   LogIn, LogOut, Mail, Menu, Plus, Search, Star, UserRound,
   Volume2, Wallet, X,
-} from "@lucide/vue";
+} from "lucide-vue-next";
 import banner from "./assets/banner.jpg";
 import aviator from "./assets/g-aviator.jpg";
 import chicken from "./assets/g-chicken.jpg";
@@ -337,11 +319,7 @@ const token = ref("");
 const user = ref<AuthUser | null>(null);
 const authMode = ref<"login" | "register">("login");
 const authUsername = ref("");
-const authPhone = ref("");
 const authEmail = ref("");
-const authCountry = ref("");
-const emailOtp = ref("");
-const phoneOtp = ref("");
 const authPassword = ref("");
 const authLoading = ref(false);
 const kycCountry = ref("");
@@ -356,6 +334,8 @@ const walletRequestType = ref<"deposit" | "withdrawal">("deposit");
 let slideTimer: ReturnType<typeof setInterval> | undefined;
 let jackpotTimer: ReturnType<typeof setInterval> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+let googleScriptPromise: Promise<void> | undefined;
+let googleInitialized = false;
 
 const currentSlide = computed(() => slides[slide.value] ?? slides[0]!);
 const kycLabel = computed(() => {
@@ -382,6 +362,12 @@ const favoriteNames = computed(() => {
   return names.length ? names.join(", ") : "None yet";
 });
 
+watch([modal, authMode], () => {
+  if (modal.value === "auth" && authMode.value === "login") {
+    window.setTimeout(() => { void googleLogin(); }, 0);
+  }
+});
+
 onMounted(async () => {
   slideTimer = setInterval(() => { slide.value = (slide.value + 1) % slides.length; }, 4000);
   jackpotTimer = setInterval(() => { jackpot.value += Math.random() * 25; }, 1200);
@@ -397,7 +383,7 @@ onUnmounted(() => {
 async function api(path: string, options: RequestInit = {}): Promise<any> {
   const headers = new Headers(options.headers || {});
   headers.set("Content-Type", "application/json");
-  if (token.value) headers.set("Authorization", `Bearer ${token.value}`);
+  if (token.value) headers.set("Authorization", "Bearer " + token.value);
   const response = await fetch(path, { ...options, headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || "Request failed");
@@ -485,43 +471,24 @@ function claimPromotion(): void {
   if (requireSignIn()) return;
   modal.value = "deposit";
 }
-async function sendOtp(channel: "email" | "sms"): Promise<void> {
-  const destination = channel === "email" ? authEmail.value.trim() : authPhone.value.trim();
-  if (!destination) {
-    notify(channel === "email" ? "Enter your email first" : "Enter your phone number first");
-    return;
-  }
-  try {
-    const data = await api("/api/auth/otp/send", {
-      method: "POST",
-      body: JSON.stringify({ channel, destination }),
-    });
-    notify(data.devCode ? `Development verification code: ${data.devCode}` : data.message);
-  } catch (error) {
-    notify(error instanceof Error ? error.message : "Could not send verification code");
-  }
-}
-async function verifyOtp(channel: "email" | "sms"): Promise<void> {
-  const destination = channel === "email" ? authEmail.value.trim() : authPhone.value.trim();
-  const code = channel === "email" ? emailOtp.value : phoneOtp.value;
-  try {
-    await api("/api/auth/otp/verify", {
-      method: "POST",
-      body: JSON.stringify({ channel, destination, code }),
-    });
-    notify(`${channel === "email" ? "Email" : "Phone"} verified`);
-  } catch (error) {
-    notify(error instanceof Error ? error.message : "Verification failed");
-  }
-}
 async function googleLogin(): Promise<void> {
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
   if (!clientId) {
     notify("Google Sign-In is not configured");
     return;
   }
-  if (!document.querySelector('script[src="https://accounts.google.com/gsi/client"]')) {
-    await new Promise<void>((resolve, reject) => {
+  if (!googleScriptPromise) {
+    googleScriptPromise = new Promise<void>((resolve, reject) => {
+      const existingScript = document.querySelector<HTMLScriptElement>('script[src="https://accounts.google.com/gsi/client"]');
+      if (existingScript && (window as { google?: unknown }).google) {
+        resolve();
+        return;
+      }
+      if (existingScript) {
+        existingScript.addEventListener("load", () => resolve(), { once: true });
+        existingScript.addEventListener("error", () => reject(new Error("Could not load Google Sign-In")), { once: true });
+        return;
+      }
       const script = document.createElement("script");
       script.src = "https://accounts.google.com/gsi/client";
       script.async = true;
@@ -530,29 +497,52 @@ async function googleLogin(): Promise<void> {
       document.head.appendChild(script);
     });
   }
-  const google = (window as unknown as { google?: { accounts?: { id?: { initialize: (options: { client_id: string; callback: (response: { credential: string }) => void }) => void; prompt: () => void } } } }).google;
+  await googleScriptPromise;
+  const google = (window as unknown as {
+    google?: {
+      accounts?: {
+        id?: {
+          initialize: (options: { client_id: string; callback: (response: { credential: string }) => void }) => void;
+          renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
+        };
+      };
+    };
+  }).google;
   if (!google?.accounts?.id) return;
-  google.accounts.id.initialize({
-    client_id: clientId,
-    callback: async (response) => {
-      try {
-        const data = await api("/api/auth/google", {
-          method: "POST",
-          body: JSON.stringify({ credential: response.credential }),
-        });
-        token.value = data.token;
-        localStorage.setItem("b9_token", data.token);
-        user.value = data.user;
-        signedIn.value = true;
-        balance.value = data.user.balance;
-        modal.value = null;
-        notify(`Welcome, ${data.user.username}!`);
-      } catch (error) {
-        notify(error instanceof Error ? error.message : "Google sign-in failed");
-      }
-    },
-  });
-  google.accounts.id.prompt();
+  if (!googleInitialized) {
+    google.accounts.id.initialize({
+      client_id: clientId,
+      callback: async (response) => {
+        try {
+          const data = await api("/api/auth/google", {
+            method: "POST",
+            body: JSON.stringify({ credential: response.credential }),
+          });
+          token.value = data.token;
+          localStorage.setItem("b9_token", data.token);
+          user.value = data.user;
+          signedIn.value = true;
+          balance.value = data.user.balance;
+          modal.value = null;
+          notify(`Welcome, ${data.user.username}!`);
+        } catch (error) {
+          notify(error instanceof Error ? error.message : "Google sign-in failed");
+        }
+      },
+    });
+    googleInitialized = true;
+  }
+  const buttonParent = document.querySelector<HTMLElement>("#google-signin-button");
+  if (buttonParent) {
+    buttonParent.replaceChildren();
+    google.accounts.id.renderButton(buttonParent, {
+      theme: "outline",
+      size: "large",
+      text: "continue_with",
+      shape: "pill",
+      width: 280,
+    });
+  }
 }
 function setKycFile(field: "front" | "back" | "selfie", event: Event): void {
   const input = event.target as HTMLInputElement;
@@ -581,7 +571,7 @@ async function submitKyc(): Promise<void> {
   kycLoading.value = true;
   try {
     const headers = new Headers();
-    if (token.value) headers.set("Authorization", `Bearer ${token.value}`);
+    if (token.value) headers.set("Authorization", "Bearer " + token.value);
     const response = await fetch("/api/auth/kyc", { method: "POST", headers, body: form });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "KYC submission failed");
@@ -602,9 +592,7 @@ async function submitAuth(): Promise<void> {
       method: "POST",
       body: JSON.stringify({
         username: authUsername.value,
-        phone: authPhone.value,
         email: authEmail.value,
-        country: authCountry.value,
         password: authPassword.value,
       }),
     });
@@ -827,7 +815,7 @@ button { cursor: pointer; }
 .auth-form input { width: 100%; padding: 12px 14px; border: 1px solid #d5ded6; border-radius: 12px; outline-color: #27a95c; }
 .primary-button:disabled { opacity: .65; cursor: wait; }
 .auth-form select, .kyc-form select, .kyc-form input { width: 100%; min-height: 42px; padding: 10px 12px; border: 1px solid #d5ded6; border-radius: 10px; background: white; outline-color: #27a95c; }
-.google-button { width: 100%; min-height: 42px; border: 1px solid #d5ded6; border-radius: 10px; color: #315940; background: white; font-weight: 700; }
+.google-signin-button { display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: center; }
 .verification-row { display: grid; grid-template-columns: 92px 1fr 64px; gap: 7px; }
 .verification-row input { width: 100%; min-height: 40px; padding: 8px; border: 1px solid #d5ded6; border-radius: 9px; }
 .secondary-button, .verify-button { border: 0; border-radius: 9px; color: white; font-size: 12px; }
@@ -837,6 +825,38 @@ button { cursor: pointer; }
 .kyc-form label input { padding: 7px; border-style: dashed; }
 @media (min-width: 480px) {
   .page-frame { min-height: 100vh; }
+}
+@media (min-width: 760px) {
+  body { background: #edf5ef; }
+  .page-frame {
+    width: min(1180px, calc(100% - 32px));
+    margin: 16px auto 0;
+    border-radius: 24px 24px 0 0;
+  }
+  .topbar { height: 72px; padding: 8px 24px 12px; border-radius: 24px 24px 0 0; }
+  .brand-emblem { width: 45px; height: 48px; }
+  .brand-wordmark { font-size: 21px; }
+  .header-actions { max-width: 420px; gap: 8px; }
+  .balance-button, .deposit-button { height: 42px; }
+  .search-wrap { padding-right: 24px; padding-left: 24px; }
+  .content { gap: 14px; padding: 14px 18px 24px; }
+  .promo-frame { padding: 10px; }
+  .hero { aspect-ratio: 3.25 / 1; max-height: 390px; }
+  .hero-copy { max-width: 45%; padding-left: 9%; }
+  .categories { min-height: 104px; padding-right: 18px; padding-left: 18px; }
+  .category { max-width: 130px; }
+  .category-image { width: 50px; height: 50px; }
+  .jackpot { min-height: 130px; }
+  .jackpot-art { width: 220px; }
+  .game-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+  .game-card { border-radius: 18px; }
+  .games-panel { padding: 16px 14px 14px; }
+  .modal-backdrop { align-items: center; }
+  .modal-sheet { max-height: 88vh; border-radius: 24px; }
+  .bottom-nav { width: min(1180px, calc(100% - 32px)); max-width: 1180px; border-radius: 20px 20px 0 0; }
+}
+@media (min-width: 1100px) {
+  .game-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 @media (max-width: 370px) {
   .topbar { gap: 4px; padding-right: 8px; padding-left: 8px; }

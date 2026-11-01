@@ -10,14 +10,30 @@ import multer from "multer";
 import { OAuth2Client } from "google-auth-library";
 import nodemailer from "nodemailer";
 import twilio from "twilio";
+import dotenv from "dotenv";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+
+dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env.local") });
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
 const jwtSecret = process.env.JWT_SECRET || "change-this-secret-in-production";
+const isProduction = process.env.NODE_ENV === "production";
+if (isProduction && (!process.env.JWT_SECRET || jwtSecret.length < 32)) {
+  throw new Error("JWT_SECRET must contain at least 32 characters in production");
+}
+if (isProduction && !process.env.ADMIN_PASSWORD) {
+  throw new Error("ADMIN_PASSWORD is required in production");
+}
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataFile = path.join(__dirname, "database.json");
 
 app.use(express.json({ limit: "1mb" }));
+app.use(helmet({ crossOriginResourcePolicy: { policy: "same-site" } }));
+app.use("/api/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, standardHeaders: true, legacyHeaders: false }));
+app.use("/api/admin/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false }));
+app.get("/api/health", (_req, res) => res.json({ ok: true }));
 const uploadDir = path.join(__dirname, "uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({
@@ -114,6 +130,17 @@ function otpHash(value) {
   return createHash("sha256").update(String(value)).digest("hex");
 }
 
+function uniqueUsername(db, preferred) {
+  const base = String(preferred || "user").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 20) || "user";
+  let candidate = base;
+  let suffix = 1;
+  while (db.users.some((item) => item.username?.toLowerCase() === candidate.toLowerCase())) {
+    const ending = `_${suffix++}`;
+    candidate = `${base.slice(0, Math.max(1, 20 - ending.length))}${ending}`;
+  }
+  return candidate;
+}
+
 async function sendOtp(channel, destination, code) {
   if (channel === "email" && process.env.SMTP_HOST) {
     const transporter = nodemailer.createTransport({
@@ -190,41 +217,32 @@ app.post("/api/auth/otp/verify", (req, res) => {
 
 app.post("/api/auth/register", async (req, res) => {
   const username = String(req.body.username || "").trim().replace(/\s+/g, "");
-  const phone = String(req.body.phone || "").trim();
   const email = String(req.body.email || "").trim().toLowerCase();
   const password = String(req.body.password || "");
-  const country = req.body.country === "IN" ? "IN" : req.body.country === "NP" ? "NP" : "";
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
     return res.status(400).json({ error: "Username must be 3-20 letters, numbers, or underscores" });
   }
   if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
-  if (!country) return res.status(400).json({ error: "Select Nepal or India" });
-  if (!email || !phone) return res.status(400).json({ error: "Email and phone are required" });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Enter a valid email address" });
   const db = readDb();
-  db.verifications ||= {};
-  if (!db.verifications[`email:${email}`]) return res.status(403).json({ error: "Verify your email first" });
-  if (!db.verifications[`sms:${phone}`]) return res.status(403).json({ error: "Verify your phone first" });
   if (db.users.some((user) => user.username.toLowerCase() === username.toLowerCase())) {
     return res.status(409).json({ error: "Username already exists" });
   }
   if (db.users.some((user) => user.email?.toLowerCase() === email)) {
     return res.status(409).json({ error: "Email already registered" });
   }
-  if (db.users.some((user) => user.phone === phone)) {
-    return res.status(409).json({ error: "Phone number already registered" });
-  }
   const user = {
     id: randomUUID(),
     username,
-    phone,
+    phone: "",
     email,
-    country,
+    country: "",
     passwordHash: await bcrypt.hash(password, 12),
     role: "user",
     balance: 0,
     status: "active",
-    emailVerified: true,
-    phoneVerified: true,
+    emailVerified: false,
+    phoneVerified: false,
     kycStatus: "not_submitted",
     kycDocuments: {},
     createdAt: new Date().toISOString(),
@@ -266,7 +284,7 @@ app.post("/api/auth/google", async (req, res) => {
     if (!user) {
       user = {
         id: randomUUID(),
-        username: String(payload.email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "_")).slice(0, 20),
+        username: uniqueUsername(db, payload.email.split("@")[0]),
         phone: "",
         email: payload.email.toLowerCase(),
         country: "",
@@ -284,6 +302,9 @@ app.post("/api/auth/google", async (req, res) => {
       };
       db.users.push(user);
     }
+    if (user.status !== "active") return res.status(403).json({ error: "This account is suspended" });
+    user.googleId ||= payload.sub;
+    user.emailVerified = true;
     user.lastLoginAt = new Date().toISOString();
     writeDb(db);
     const token = jwt.sign({ id: user.id, role: user.role }, jwtSecret, { expiresIn: "7d" });
@@ -340,6 +361,11 @@ app.post(
       return res.status(400).json({ error: country === "NP" ? "Upload front, back, and selfie" : "Upload front and selfie" });
     }
     const saveName = (file) => file ? `/uploads/${path.basename(file.path)}` : "";
+    for (const documentUrl of Object.values(user.kycDocuments || {})) {
+      const oldName = path.basename(String(documentUrl || ""));
+      const oldPath = path.join(uploadDir, oldName);
+      if (oldName && fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
     user.country = country;
     user.fullName = fullName;
     user.dateOfBirth = dateOfBirth;
@@ -385,7 +411,12 @@ app.post("/api/wallet/request", auth, (req, res) => {
   const db = readDb();
   const user = db.users.find((item) => item.id === req.user.id);
   if (!user || user.status !== "active") return res.status(403).json({ error: "Account unavailable" });
-  if (type === "withdrawal" && user.balance < amount) return res.status(400).json({ error: "Insufficient balance" });
+  if (type === "withdrawal") {
+    const reserved = db.transactions
+      .filter((item) => item.userId === user.id && item.type === "withdrawal" && item.status === "pending")
+      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    if (user.balance - reserved < amount) return res.status(400).json({ error: "Insufficient available balance" });
+  }
   db.transactions.unshift({
     id: randomUUID(),
     userId: user.id,
@@ -457,6 +488,9 @@ app.patch("/api/admin/transactions/:id", auth, admin, (req, res) => {
   transaction.processedAt = new Date().toISOString();
   const user = db.users.find((item) => item.id === transaction.userId);
   if (user && req.body.status === "approved") {
+    if (transaction.type === "withdrawal" && user.balance < transaction.amount) {
+      return res.status(409).json({ error: "Insufficient balance to approve this withdrawal" });
+    }
     user.balance = Number((user.balance + (transaction.type === "deposit" ? transaction.amount : -transaction.amount)).toFixed(2));
     if (user.balance < 0) user.balance = 0;
   }

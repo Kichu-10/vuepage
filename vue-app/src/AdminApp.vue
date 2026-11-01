@@ -97,7 +97,7 @@ const kycUsers = computed(() => users.value.filter((account) => account.kycStatu
 async function api(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {});
   headers.set("Content-Type", "application/json");
-  if (token.value) headers.set("Authorization", `Bearer ${token.value}`);
+  if (token.value) headers.set("Authorization", "Bearer " + token.value);
   const response = await fetch(path, { ...options, headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || "Request failed");
@@ -164,7 +164,7 @@ async function reviewKyc(id: string, status: "verified" | "rejected") {
 }
 
 async function openDocument(url: string) {
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
+  const response = await fetch(url, { headers: { Authorization: "Bearer " + token.value } });
   if (!response.ok) return;
   const blob = await response.blob();
   window.open(URL.createObjectURL(blob), "_blank", "noopener,noreferrer");
