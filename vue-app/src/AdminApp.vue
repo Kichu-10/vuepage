@@ -4,8 +4,8 @@
       <img src="/src/assets/brand-logo.jpg" alt="B9 Game" />
       <h1>Admin Portal</h1>
       <p>Authorized access only</p>
-      <input v-model="username" autocomplete="username" placeholder="Admin username" required />
-      <input v-model="password" type="password" autocomplete="current-password" placeholder="Password" required />
+      <input v-model="username" autocomplete="username" name="admin-username" placeholder="Admin username" required />
+      <input v-model="password" type="password" autocomplete="current-password" name="admin-password" placeholder="Password" required />
       <button type="submit" :disabled="loading">{{ loading ? "Signing in..." : "Sign In" }}</button>
       <small v-if="error">{{ error }}</small>
     </form>
@@ -21,6 +21,9 @@
       <article><strong>{{ stats.activeUsers }}</strong><span>Active Users</span></article>
       <article><strong>Rs. {{ money(stats.totalBalance) }}</strong><span>User Balance</span></article>
       <article><strong>{{ stats.pendingRequests }}</strong><span>Pending Requests</span></article>
+      <article><strong>{{ stats.indiaUsers }}</strong><span>India Users</span></article>
+      <article><strong>{{ stats.pakistanUsers }}</strong><span>Pakistan Users</span></article>
+      <article><strong>{{ stats.pendingKyc }}</strong><span>Pending KYC</span></article>
     </section>
 
     <nav>
@@ -31,7 +34,15 @@
 
     <section v-if="tab === 'users'" class="panel">
       <h2>Users</h2>
-      <article v-for="account in users" :key="account.id" class="row">
+      <div class="toolbar">
+        <input v-model="userSearch" type="search" placeholder="Search username or email" aria-label="Search users" />
+        <select v-model="countryFilter" aria-label="Filter country">
+          <option value="">All countries</option>
+          <option value="IN">India</option>
+          <option value="PK">Pakistan</option>
+        </select>
+      </div>
+      <article v-for="account in filteredUsers" :key="account.id" class="row">
         <div><strong>{{ account.username }}</strong><span>{{ account.email }} · {{ account.country === "PK" ? "Pakistan" : account.country === "IN" ? "India" : "Country not set" }}</span></div>
         <div class="meta">Rs. {{ money(account.balance) }} · {{ account.status }}</div>
         <button @click="toggleUser(account)">{{ account.status === "active" ? "Suspend" : "Activate" }}</button>
@@ -89,10 +100,20 @@ const password = ref("");
 const loading = ref(false);
 const error = ref("");
 const tab = ref<"users" | "kyc" | "transactions">("users");
-const stats = ref({ totalUsers: 0, activeUsers: 0, totalBalance: 0, pendingRequests: 0 });
+const stats = ref({ totalUsers: 0, activeUsers: 0, totalBalance: 0, pendingRequests: 0, indiaUsers: 0, pakistanUsers: 0, pendingKyc: 0 });
 const users = ref<Account[]>([]);
 const transactions = ref<Transaction[]>([]);
+const userSearch = ref("");
+const countryFilter = ref("");
 const kycUsers = computed(() => users.value.filter((account) => account.kycStatus !== "not_submitted"));
+const filteredUsers = computed(() => {
+  const search = userSearch.value.trim().toLowerCase();
+  return users.value.filter((account) => {
+    const matchesCountry = !countryFilter.value || account.country === countryFilter.value;
+    const matchesSearch = !search || account.username.toLowerCase().includes(search) || account.email.toLowerCase().includes(search);
+    return matchesCountry && matchesSearch;
+  });
+});
 
 async function api(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {});
@@ -203,6 +224,8 @@ body { margin: 0; }
 .admin-shell nav button.active { color: white; background: #159a4b; }
 .panel { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; background: white; }
 .panel h2 { margin: 0 0 5px; font-size: 17px; }
+.toolbar { display: grid; grid-template-columns: 1fr 180px; gap: 8px; margin-bottom: 4px; }
+.toolbar input, .toolbar select { height: 42px; padding: 0 10px; border: 1px solid #d5ded6; border-radius: 9px; background: white; }
 .row, .kyc-row { display: flex; min-height: 58px; align-items: center; gap: 10px; padding: 9px; border-radius: 10px; background: #f4f7f4; }
 .row > div:first-child, .kyc-row > div:first-child { min-width: 0; flex: 1; }
 .row strong, .row span, .kyc-row strong, .kyc-row span { display: block; }

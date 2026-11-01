@@ -138,7 +138,7 @@
             <button :class="{ active: walletRequestType === 'deposit' }" @click="walletRequestType = 'deposit'">Deposit</button>
             <button :class="{ active: walletRequestType === 'withdrawal' }" @click="walletRequestType = 'withdrawal'">Withdraw</button>
           </div>
-          <p class="bonus-note">Payment gateway is not connected. Requests are sent to the admin for approval.</p>
+          <p class="bonus-note">Submit a request for admin review and balance approval.</p>
           <div class="amount-options">
             <button
               v-for="preset in [500, 1000, 5000, 10000]"
@@ -165,10 +165,23 @@
             <button type="button" :class="{ active: authMode === 'login' }" @click="authMode = 'login'">Sign In</button>
             <button type="button" :class="{ active: authMode === 'register' }" @click="authMode = 'register'">Register</button>
           </div>
-          <div v-if="authMode === 'login'" id="google-signin-button" class="google-signin-button" />
+          <template v-if="authMode === 'login'">
+            <select v-model="authCountry" aria-label="Country for Google Sign-In">
+              <option value="">Select country for Google Sign-In</option>
+              <option value="IN">India</option>
+              <option value="PK">Pakistan</option>
+            </select>
+            <div id="google-signin-button" class="google-signin-button" />
+            <div class="auth-divider"><span>or sign in with username</span></div>
+          </template>
           <input v-model="authUsername" autocomplete="username" placeholder="Username" aria-label="Username" required minlength="3" />
           <template v-if="authMode === 'register'">
             <input v-model="authEmail" type="email" autocomplete="email" placeholder="Gmail or email address" aria-label="Email address" required />
+            <select v-model="authCountry" aria-label="Country" required>
+              <option value="">Select country</option>
+              <option value="IN">India</option>
+              <option value="PK">Pakistan</option>
+            </select>
           </template>
           <input v-model="authPassword" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password" required minlength="6" />
           <button class="primary-button full-button" type="submit" :disabled="authLoading">
@@ -321,6 +334,7 @@ const authMode = ref<"login" | "register">("login");
 const authUsername = ref("");
 const authEmail = ref("");
 const authPassword = ref("");
+const authCountry = ref("");
 const authLoading = ref(false);
 const kycCountry = ref("");
 const kycFullName = ref("");
@@ -332,7 +346,6 @@ const kycLoading = ref(false);
 const kycFiles = ref<Record<string, File | undefined>>({});
 const walletRequestType = ref<"deposit" | "withdrawal">("deposit");
 let slideTimer: ReturnType<typeof setInterval> | undefined;
-let jackpotTimer: ReturnType<typeof setInterval> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let googleScriptPromise: Promise<void> | undefined;
 let googleInitialized = false;
@@ -370,13 +383,11 @@ watch([modal, authMode], () => {
 
 onMounted(async () => {
   slideTimer = setInterval(() => { slide.value = (slide.value + 1) % slides.length; }, 4000);
-  jackpotTimer = setInterval(() => { jackpot.value += Math.random() * 25; }, 1200);
   token.value = localStorage.getItem("b9_token") || "";
   if (token.value) await restoreSession();
 });
 onUnmounted(() => {
   if (slideTimer) clearInterval(slideTimer);
-  if (jackpotTimer) clearInterval(jackpotTimer);
   if (noticeTimer) clearTimeout(noticeTimer);
 });
 
@@ -436,16 +447,9 @@ function toggleFavorite(id: number): void {
 }
 async function play(name: string): Promise<void> {
   if (requireSignIn()) return;
-  if (balance.value < 10) {
-    notify("Low balance — please deposit");
-    modal.value = "deposit";
-    return;
-  }
   try {
-    const data = await api("/api/wallet/play", { method: "POST", body: "{}" });
-    balance.value = data.balance;
-    if (user.value) user.value.balance = data.balance;
-    notify(data.win ? `${name}: you won Rs. ${data.win}!` : `${name}: lost Rs. 10. Try again!`);
+    await api("/api/wallet/play", { method: "POST", body: "{}" });
+    notify(`${name} launched`);
   } catch (error) {
     notify(error instanceof Error ? error.message : "Unable to play");
   }
@@ -514,9 +518,10 @@ async function googleLogin(): Promise<void> {
       client_id: clientId,
       callback: async (response) => {
         try {
+          if (!authCountry.value) throw new Error("Select India or Pakistan before Google Sign-In");
           const data = await api("/api/auth/google", {
             method: "POST",
-            body: JSON.stringify({ credential: response.credential }),
+            body: JSON.stringify({ credential: response.credential, country: authCountry.value }),
           });
           token.value = data.token;
           localStorage.setItem("b9_token", data.token);
@@ -594,6 +599,7 @@ async function submitAuth(): Promise<void> {
         username: authUsername.value,
         email: authEmail.value,
         password: authPassword.value,
+        country: authMode.value === "register" ? authCountry.value : undefined,
       }),
     });
     token.value = data.token;
@@ -603,6 +609,7 @@ async function submitAuth(): Promise<void> {
     balance.value = data.user.balance;
     modal.value = null;
     authPassword.value = "";
+    if (authMode.value === "register") authCountry.value = "";
     notify(authMode.value === "login" ? `Welcome back, ${data.user.username}!` : "Account created successfully");
   } catch (error) {
     notify(error instanceof Error ? error.message : "Authentication failed");
@@ -816,6 +823,8 @@ button { cursor: pointer; }
 .primary-button:disabled { opacity: .65; cursor: wait; }
 .auth-form select, .kyc-form select, .kyc-form input { width: 100%; min-height: 42px; padding: 10px 12px; border: 1px solid #d5ded6; border-radius: 10px; background: white; outline-color: #27a95c; }
 .google-signin-button { display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: center; }
+.auth-divider { display: flex; align-items: center; gap: 8px; color: #718076; font-size: 11px; }
+.auth-divider::before, .auth-divider::after { content: ""; height: 1px; flex: 1; background: #dfe7e0; }
 .verification-row { display: grid; grid-template-columns: 92px 1fr 64px; gap: 7px; }
 .verification-row input { width: 100%; min-height: 40px; padding: 8px; border: 1px solid #d5ded6; border-radius: 9px; }
 .secondary-button, .verify-button { border: 0; border-radius: 9px; color: white; font-size: 12px; }

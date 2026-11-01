@@ -33,6 +33,11 @@ app.use(express.json({ limit: "1mb" }));
 app.use(helmet({ crossOriginResourcePolicy: { policy: "same-site" } }));
 app.use("/api/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, standardHeaders: true, legacyHeaders: false }));
 app.use("/api/admin/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false }));
+app.use("/api/admin", (_req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, private");
+  res.setHeader("Pragma", "no-cache");
+  next();
+});
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 const uploadDir = path.join(__dirname, "uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -93,12 +98,28 @@ function auth(req, res, next) {
 }
 
 function admin(req, res, next) {
+  if (!ipIsAllowed(req)) {
+    return res.status(403).json({ error: "Admin access is not permitted from this network" });
+  }
   const db = readDb();
   const user = db.users.find((item) => item.id === req.user.id);
   if (!user || user.role !== "admin" || user.status !== "active") {
     return res.status(403).json({ error: "Admin access required" });
   }
   next();
+}
+
+function clientIp(req) {
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0]?.trim();
+  return forwarded || req.ip || req.socket.remoteAddress || "";
+}
+
+function ipIsAllowed(req) {
+  const allowlist = String(process.env.ADMIN_ALLOWED_IPS || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return allowlist.length === 0 || allowlist.includes(clientIp(req));
 }
 
 app.get("/uploads/:filename", auth, admin, (req, res) => {
@@ -110,18 +131,31 @@ app.get("/uploads/:filename", auth, admin, (req, res) => {
 
 async function seedAdmin() {
   const db = readDb();
-  if (!db.users.some((user) => user.role === "admin")) {
+  const configuredUsername = process.env.ADMIN_USERNAME?.trim();
+  const configuredPassword = process.env.ADMIN_PASSWORD;
+  if (!configuredUsername || !configuredPassword) {
+    throw new Error("ADMIN_USERNAME and ADMIN_PASSWORD are required");
+  }
+  let admin = db.users.find((user) => user.role === "admin");
+  if (!admin) {
     db.users.push({
       id: randomUUID(),
-      username: process.env.ADMIN_USERNAME || "admin",
+      username: configuredUsername,
       phone: "",
-      passwordHash: await bcrypt.hash(process.env.ADMIN_PASSWORD || "admin123", 12),
+      passwordHash: await bcrypt.hash(configuredPassword, 12),
       role: "admin",
       balance: 0,
       status: "active",
       createdAt: new Date().toISOString(),
       lastLoginAt: null,
     });
+    writeDb(db);
+  } else {
+    admin.username = configuredUsername;
+    if (!(await bcrypt.compare(configuredPassword, admin.passwordHash || ""))) {
+      admin.passwordHash = await bcrypt.hash(configuredPassword, 12);
+    }
+    admin.status = "active";
     writeDb(db);
   }
 }
@@ -192,7 +226,6 @@ app.post("/api/auth/otp/send", async (req, res) => {
     await sendOtp(channel, destination, code);
     res.json({
       message: `Verification code sent to ${destination}`,
-      devCode: process.env.OTP_DEV_MODE === "true" || (!process.env.SMTP_HOST && !process.env.TWILIO_ACCOUNT_SID) ? code : undefined,
     });
   } catch (error) {
     res.status(502).json({ error: "Could not deliver verification code" });
@@ -219,11 +252,13 @@ app.post("/api/auth/register", async (req, res) => {
   const username = String(req.body.username || "").trim().replace(/\s+/g, "");
   const email = String(req.body.email || "").trim().toLowerCase();
   const password = String(req.body.password || "");
+  const country = req.body.country === "IN" ? "IN" : req.body.country === "PK" ? "PK" : "";
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
     return res.status(400).json({ error: "Username must be 3-20 letters, numbers, or underscores" });
   }
   if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Enter a valid email address" });
+  if (!country) return res.status(400).json({ error: "Select India or Pakistan" });
   const db = readDb();
   if (db.users.some((user) => user.username.toLowerCase() === username.toLowerCase())) {
     return res.status(409).json({ error: "Username already exists" });
@@ -236,7 +271,7 @@ app.post("/api/auth/register", async (req, res) => {
     username,
     phone: "",
     email,
-    country: "",
+    country,
     passwordHash: await bcrypt.hash(password, 12),
     role: "user",
     balance: 0,
@@ -279,15 +314,17 @@ app.post("/api/auth/google", async (req, res) => {
     });
     const payload = ticket.getPayload();
     if (!payload?.email) return res.status(401).json({ error: "Google account email is unavailable" });
+    const requestedCountry = req.body.country === "IN" ? "IN" : req.body.country === "PK" ? "PK" : "";
     const db = readDb();
     let user = db.users.find((item) => item.email?.toLowerCase() === payload.email?.toLowerCase());
     if (!user) {
+      if (!requestedCountry) return res.status(400).json({ error: "Select India or Pakistan before Google Sign-In" });
       user = {
         id: randomUUID(),
         username: uniqueUsername(db, payload.email.split("@")[0]),
         phone: "",
         email: payload.email.toLowerCase(),
-        country: "",
+        country: requestedCountry,
         passwordHash: await bcrypt.hash(randomUUID(), 12),
         role: "user",
         balance: 0,
@@ -305,24 +342,44 @@ app.post("/api/auth/google", async (req, res) => {
     if (user.status !== "active") return res.status(403).json({ error: "This account is suspended" });
     user.googleId ||= payload.sub;
     user.emailVerified = true;
+    if (!user.country && requestedCountry) user.country = requestedCountry;
     user.lastLoginAt = new Date().toISOString();
     writeDb(db);
     const token = jwt.sign({ id: user.id, role: user.role }, jwtSecret, { expiresIn: "7d" });
     res.json({ token, user: publicUser(user) });
-  } catch {
+  } catch (error) {
+    console.error("Google verification failed:", error instanceof Error ? error.message : error);
+    const message = error instanceof Error ? error.message : "";
+    if (!isProduction && message) {
+      return res.status(401).json({ error: `Google verification failed: ${message}` });
+    }
     res.status(401).json({ error: "Google verification failed" });
   }
 });
 
 app.post("/api/admin/auth/login", async (req, res) => {
+  if (!ipIsAllowed(req)) return res.status(403).json({ error: "Admin access is not permitted from this network" });
   const username = String(req.body.username || "").trim();
   const password = String(req.body.password || "");
   const db = readDb();
   const user = db.users.find((item) => item.username.toLowerCase() === username.toLowerCase() && item.role === "admin");
+  if (user?.lockedUntil && Number(user.lockedUntil) > Date.now()) {
+    return res.status(423).json({ error: "Admin login temporarily locked" });
+  }
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    if (user) {
+      user.failedAdminAttempts = Number(user.failedAdminAttempts || 0) + 1;
+      if (user.failedAdminAttempts >= 5) {
+        user.lockedUntil = Date.now() + 15 * 60 * 1000;
+        user.failedAdminAttempts = 0;
+      }
+      writeDb(db);
+    }
     return res.status(401).json({ error: "Invalid admin credentials" });
   }
   if (user.status !== "active") return res.status(403).json({ error: "Admin account is suspended" });
+  user.failedAdminAttempts = 0;
+  user.lockedUntil = 0;
   user.lastLoginAt = new Date().toISOString();
   writeDb(db);
   const token = jwt.sign({ id: user.id, role: "admin" }, jwtSecret, { expiresIn: "8h" });
@@ -388,24 +445,7 @@ app.post(
 );
 
 app.post("/api/wallet/play", auth, (req, res) => {
-  const bet = 10;
-  const db = readDb();
-  const user = db.users.find((item) => item.id === req.user.id);
-  if (!user || user.status !== "active") return res.status(403).json({ error: "Account unavailable" });
-  if (user.balance < bet) return res.status(400).json({ error: "Low balance" });
-  const win = Math.random() < 0.45 ? Math.round(bet * (1 + Math.random() * 4)) : 0;
-  user.balance = Number((user.balance - bet + win).toFixed(2));
-  db.transactions.unshift({
-    id: randomUUID(),
-    userId: user.id,
-    username: user.username,
-    type: "play",
-    amount: win ? win - bet : -bet,
-    status: "completed",
-    createdAt: new Date().toISOString(),
-  });
-  writeDb(db);
-  res.json({ balance: user.balance, win, netChange: win ? win - bet : -bet });
+  res.status(503).json({ error: "Game provider is not connected. This account will not be charged." });
 });
 
 app.post("/api/wallet/request", auth, (req, res) => {
@@ -443,6 +483,9 @@ app.get("/api/admin/stats", auth, admin, (req, res) => {
     activeUsers: users.filter((item) => item.status === "active").length,
     totalBalance: Number(users.reduce((sum, item) => sum + item.balance, 0).toFixed(2)),
     pendingRequests: pending,
+    indiaUsers: users.filter((item) => item.country === "IN").length,
+    pakistanUsers: users.filter((item) => item.country === "PK").length,
+    pendingKyc: users.filter((item) => item.kycStatus === "pending").length,
   });
 });
 
