@@ -51,6 +51,18 @@ app.get("/api/payment/details", (_req, res) => {
     instructions: process.env.MANUAL_PAYMENT_INSTRUCTIONS || "Transfer the exact amount, then submit the request with your payment reference and proof.",
   });
 });
+
+app.get("/api/platform/settings", (_req, res) => {
+  const db = readDb();
+  const settings = db.platformSettings || {};
+  res.json({
+    announcement: settings.announcement || "Get 100% Bonus on Your First Deposit & Start Winning!",
+    maintenanceMode: Boolean(settings.maintenanceMode),
+    supportEmail: settings.supportEmail || "",
+    supportPhone: settings.supportPhone || "",
+    supportHours: settings.supportHours || "24/7",
+  });
+});
 const uploadDir = path.join(__dirname, "uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({
@@ -72,6 +84,19 @@ function writeDb(db) {
   const tempFile = `${dataFile}.tmp`;
   fs.writeFileSync(tempFile, JSON.stringify(db, null, 2));
   fs.renameSync(tempFile, dataFile);
+}
+
+function addAudit(db, adminUsername, action, target, details = "") {
+  db.auditLogs ||= [];
+  db.auditLogs.unshift({
+    id: randomUUID(),
+    adminUsername,
+    action,
+    target,
+    details,
+    createdAt: new Date().toISOString(),
+  });
+  if (db.auditLogs.length > 1000) db.auditLogs.length = 1000;
 }
 
 function addNotification(db, userId, type, title, message, relatedId = "") {
@@ -553,6 +578,8 @@ app.get("/api/admin/stats", auth, admin, (req, res) => {
   const db = readDb();
   const pending = db.transactions.filter((item) => item.status === "pending").length;
   const users = db.users.filter((item) => item.role !== "admin");
+  const approvedDeposits = db.transactions.filter((item) => item.type === "deposit" && item.status === "approved");
+  const approvedWithdrawals = db.transactions.filter((item) => item.type === "withdrawal" && item.status === "approved");
   res.json({
     totalUsers: users.length,
     activeUsers: users.filter((item) => item.status === "active").length,
@@ -561,7 +588,85 @@ app.get("/api/admin/stats", auth, admin, (req, res) => {
     indiaUsers: users.filter((item) => item.country === "IN").length,
     pakistanUsers: users.filter((item) => item.country === "PK").length,
     pendingKyc: users.filter((item) => item.kycStatus === "pending").length,
+    approvedDeposits: Number(approvedDeposits.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)),
+    approvedWithdrawals: Number(approvedWithdrawals.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)),
   });
+});
+
+app.get("/api/admin/activity", auth, admin, (req, res) => {
+  const db = readDb();
+  res.json({ logs: (db.auditLogs || []).slice(0, 100) });
+});
+
+app.get("/api/admin/settings", auth, admin, (req, res) => {
+  const db = readDb();
+  res.json({ settings: db.platformSettings || {} });
+});
+
+app.patch("/api/admin/settings", auth, admin, (req, res) => {
+  const db = readDb();
+  db.platformSettings = {
+    announcement: String(req.body.announcement || "").trim(),
+    maintenanceMode: Boolean(req.body.maintenanceMode),
+    supportEmail: String(req.body.supportEmail || "").trim(),
+    supportPhone: String(req.body.supportPhone || "").trim(),
+    supportHours: String(req.body.supportHours || "").trim(),
+  };
+  const adminUser = db.users.find((item) => item.id === req.user.id);
+  addAudit(db, adminUser?.username || "admin", "SETTINGS_UPDATED", "Platform settings", "Announcement and support settings updated");
+  writeDb(db);
+  res.json({ settings: db.platformSettings });
+});
+
+app.post("/api/support/tickets", auth, (req, res) => {
+  const db = readDb();
+  const user = db.users.find((item) => item.id === req.user.id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const subject = String(req.body.subject || "").trim();
+  const message = String(req.body.message || "").trim();
+  if (!subject || !message) return res.status(400).json({ error: "Subject and message are required" });
+  db.supportTickets ||= [];
+  const ticket = {
+    id: randomUUID(),
+    userId: user.id,
+    username: user.username,
+    subject,
+    message,
+    status: "open",
+    reply: "",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  db.supportTickets.unshift(ticket);
+  if (db.supportTickets.length > 500) db.supportTickets.length = 500;
+  writeDb(db);
+  res.status(201).json({ ticket });
+});
+
+app.get("/api/support/tickets", auth, (req, res) => {
+  const db = readDb();
+  res.json({ tickets: (db.supportTickets || []).filter((item) => item.userId === req.user.id).slice(0, 50) });
+});
+
+app.get("/api/admin/support", auth, admin, (req, res) => {
+  const db = readDb();
+  res.json({ tickets: (db.supportTickets || []).slice(0, 100) });
+});
+
+app.patch("/api/admin/support/:id", auth, admin, (req, res) => {
+  const db = readDb();
+  const ticket = db.supportTickets?.find((item) => item.id === req.params.id);
+  if (!ticket) return res.status(404).json({ error: "Support ticket not found" });
+  if (!["open", "pending", "resolved"].includes(req.body.status)) return res.status(400).json({ error: "Invalid ticket status" });
+  ticket.status = req.body.status;
+  ticket.reply = String(req.body.reply || "").trim();
+  ticket.updatedAt = new Date().toISOString();
+  const user = db.users.find((item) => item.id === ticket.userId);
+  if (user && ticket.reply) addNotification(db, user.id, "support", "Support reply received", ticket.reply, ticket.id);
+  const adminUser = db.users.find((item) => item.id === req.user.id);
+  addAudit(db, adminUser?.username || "admin", "SUPPORT_TICKET_UPDATED", ticket.username, `${ticket.status} · ${ticket.subject}`);
+  writeDb(db);
+  res.json({ ticket });
 });
 
 app.get("/api/admin/users", auth, admin, (req, res) => {
@@ -578,11 +683,15 @@ app.patch("/api/admin/users/:id", auth, admin, (req, res) => {
   const db = readDb();
   const user = db.users.find((item) => item.id === req.params.id);
   if (!user) return res.status(404).json({ error: "User not found" });
+  const adminUser = db.users.find((item) => item.id === req.user.id);
   if (typeof req.body.status === "string" && ["active", "suspended"].includes(req.body.status)) {
     user.status = req.body.status;
+    addAudit(db, adminUser?.username || "admin", "USER_STATUS_CHANGED", user.username, `Status changed to ${req.body.status}`);
   }
   if (typeof req.body.balance === "number" && Number.isFinite(req.body.balance) && req.body.balance >= 0) {
+    const previousBalance = Number(user.balance || 0);
     user.balance = Number(req.body.balance.toFixed(2));
+    addAudit(db, adminUser?.username || "admin", "BALANCE_ADJUSTED", user.username, `Rs. ${previousBalance} -> Rs. ${user.balance}; ${String(req.body.reason || "Manual adjustment").trim()}`);
   }
   writeDb(db);
   res.json({ user: publicUser(user) });
@@ -593,9 +702,11 @@ app.patch("/api/admin/users/:id/kyc", auth, admin, (req, res) => {
   const user = db.users.find((item) => item.id === req.params.id);
   if (!user) return res.status(404).json({ error: "User not found" });
   if (!["verified", "rejected"].includes(req.body.status)) return res.status(400).json({ error: "Invalid KYC status" });
+  const adminUser = db.users.find((item) => item.id === req.user.id);
   user.kycStatus = req.body.status;
   user.kycReviewedAt = new Date().toISOString();
   user.kycReviewNote = String(req.body.note || "");
+  addAudit(db, adminUser?.username || "admin", req.body.status === "verified" ? "KYC_VERIFIED" : "KYC_REJECTED", user.username, String(req.body.note || ""));
   db.notifications ||= [];
   addNotification(
     db,
@@ -616,6 +727,7 @@ app.patch("/api/admin/transactions/:id", auth, admin, (req, res) => {
   if (!transaction) return res.status(404).json({ error: "Transaction not found" });
   if (!["approved", "rejected"].includes(req.body.status)) return res.status(400).json({ error: "Invalid status" });
   if (transaction.status !== "pending") return res.status(409).json({ error: "Request already processed" });
+  const adminUser = db.users.find((item) => item.id === req.user.id);
   transaction.status = req.body.status;
   transaction.processedAt = new Date().toISOString();
   const user = db.users.find((item) => item.id === transaction.userId);
@@ -638,6 +750,13 @@ app.patch("/api/admin/transactions/:id", auth, admin, (req, res) => {
       transaction.id,
     );
   }
+  addAudit(
+    db,
+    adminUser?.username || "admin",
+    transaction.type === "deposit" ? (req.body.status === "approved" ? "DEPOSIT_APPROVED" : "DEPOSIT_REJECTED") : (req.body.status === "approved" ? "WITHDRAWAL_APPROVED" : "WITHDRAWAL_REJECTED"),
+    transaction.username || user?.username || transaction.userId,
+    `Rs. ${Number(transaction.amount).toLocaleString("en-US")} · Ref: ${transaction.paymentReference || "N/A"}`,
+  );
   writeDb(db);
   res.json({ transaction, balance: user ? user.balance : 0 });
 });
@@ -651,6 +770,7 @@ app.post("/api/admin/game-results", auth, admin, (req, res) => {
   const db = readDb();
   const user = db.users.find((item) => item.id === userId && item.role !== "admin");
   if (!user) return res.status(404).json({ error: "User not found" });
+  const adminUser = db.users.find((item) => item.id === req.user.id);
   if (outcome === "won" && winnings > 0) {
     user.balance = Number((user.balance + winnings).toFixed(2));
   }
@@ -677,6 +797,7 @@ app.post("/api/admin/game-results", auth, admin, (req, res) => {
       : `Your ${category === "lottery" ? "lottery" : category === "bet" ? "bet" : "game"} result was recorded as no win.`,
     eventId,
   );
+  addAudit(db, adminUser?.username || "admin", "GAME_RESULT_RECORDED", user.username, `${category} · ${gameName || category} · ${outcome} · Rs. ${winnings} · Ref: ${eventId}`);
   writeDb(db);
   res.status(201).json({ message: "Game result recorded", user: publicUser(user) });
 });

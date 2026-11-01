@@ -49,10 +49,13 @@
           </div>
         </div>
       </section>
+      <section v-if="maintenanceMode" class="maintenance-banner" role="status">
+        Scheduled maintenance is active. Transactions and support may experience delays.
+      </section>
 
       <section class="announcement" aria-label="Latest announcement">
         <Volume2 class="announcement-volume" :size="20" :stroke-width="2.6" />
-        <p>Get 100% Bonus on Your First Deposit &amp; Start Winning!</p>
+        <p>{{ platformAnnouncement }}</p>
         <button class="inbox-button" aria-label="Open inbox" @click="openInbox">
           <Mail :size="23" />
           <span v-if="unreadCount > 0" class="inbox-badge">{{ unreadCount > 99 ? "99+" : unreadCount }}</span>
@@ -271,6 +274,11 @@
           <button class="support-row" @click="openInbox"><Mail :size="20" /><span><strong>Message center</strong><small>View account notices</small></span></button>
           <button v-if="signedIn && user?.kycStatus !== 'verified'" class="support-row" @click="openKyc"><UserRound :size="20" /><span><strong>KYC assistance</strong><small>Review document requirements</small></span></button>
           <button class="support-row" @click="modal = 'profile'"><UserRound :size="20" /><span><strong>Account details</strong><small>Review your profile</small></span></button>
+          <div class="ticket-form">
+            <input v-model="supportSubject" maxlength="100" placeholder="Subject" :disabled="!signedIn" />
+            <textarea v-model="supportMessage" maxlength="1000" rows="3" placeholder="Describe your issue" :disabled="!signedIn"></textarea>
+            <button class="primary-button" :disabled="supportLoading || !signedIn" @click="submitSupportTicket">{{ signedIn ? (supportLoading ? "Sending..." : "Send support request") : "Sign in to contact support" }}</button>
+          </div>
         </div>
 
         <div v-else-if="modal === 'promo'" class="modal-content promo-list">
@@ -450,6 +458,11 @@ const paymentDetails = ref<PaymentDetails>({
 const inboxMessages = ref<InboxMessage[]>([]);
 const unreadCount = ref(0);
 const inboxLoading = ref(false);
+const platformAnnouncement = ref("Get 100% Bonus on Your First Deposit & Start Winning!");
+const supportSubject = ref("");
+const supportMessage = ref("");
+const supportLoading = ref(false);
+const maintenanceMode = ref(false);
 let slideTimer: ReturnType<typeof setInterval> | undefined;
 let inboxTimer: ReturnType<typeof setInterval> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -500,6 +513,13 @@ onMounted(async () => {
     paymentDetails.value = await fetch("/api/payment/details").then((response) => response.json());
   } catch {
     paymentDetails.value.instructions = "Transfer the exact amount, then submit the payment reference and proof.";
+  }
+  try {
+    const settings = await fetch("/api/platform/settings").then((response) => response.json());
+    if (settings.announcement) platformAnnouncement.value = settings.announcement;
+    maintenanceMode.value = Boolean(settings.maintenanceMode);
+  } catch {
+    // Keep the built-in announcement when platform settings are unavailable.
   }
   if (token.value) {
     await restoreSession();
@@ -580,6 +600,30 @@ function notify(message: string): void {
   notice.value = message;
   if (noticeTimer) clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => { notice.value = ""; }, 3000);
+}
+async function submitSupportTicket(): Promise<void> {
+  if (!signedIn.value) {
+    modal.value = "auth";
+    return;
+  }
+  if (!supportSubject.value.trim() || !supportMessage.value.trim()) {
+    notify("Enter both a subject and support message");
+    return;
+  }
+  supportLoading.value = true;
+  try {
+    await api("/api/support/tickets", {
+      method: "POST",
+      body: JSON.stringify({ subject: supportSubject.value.trim(), message: supportMessage.value.trim() }),
+    });
+    supportSubject.value = "";
+    supportMessage.value = "";
+    notify("Support request sent successfully");
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "Could not send support request");
+  } finally {
+    supportLoading.value = false;
+  }
 }
 function requireSignIn(): boolean {
   if (signedIn.value) return false;
@@ -1064,6 +1108,14 @@ button { cursor: pointer; }
 .support-row { display: flex; width: 100%; align-items: center; gap: 10px; padding: 11px; border: 0; border-radius: 10px; text-align: left; background: #edf5ef; color: #355342; }
 .support-row span { display: flex; flex-direction: column; }
 .support-row small { color: #829087; }
+.ticket-form { display: grid; gap: 7px; margin-top: 4px; }
+.ticket-form input, .ticket-form textarea {
+  width: 100%; border: 1px solid #dce7df; border-radius: 10px; background: white; color: #355342; outline: none;
+}
+.ticket-form input { height: 42px; padding: 0 11px; }
+.ticket-form textarea { resize: vertical; padding: 10px 11px; font-family: inherit; }
+.ticket-form input:focus, .ticket-form textarea:focus { border-color: #5dbb80; box-shadow: 0 0 0 3px rgb(50 153 93 / 8%); }
+.maintenance-banner { margin-bottom: 10px; padding: 10px 12px; border: 1px solid #f1c76b; border-radius: 10px; color: #7a5710; background: #fff8e7; font-size: 12px; font-weight: 700; text-align: center; }
 .toast { position: fixed; z-index: 20; bottom: 88px; left: 50%; max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 99px; color: white; background: #27382b; box-shadow: 0 4px 16px rgb(0 0 0 / 20%); text-align: center; font-size: 13px; transform: translateX(-50%); }
 .wallet-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .wallet-tabs button { padding: 10px; border: 1px solid #d5ded6; border-radius: 10px; color: #536358; background: white; }
