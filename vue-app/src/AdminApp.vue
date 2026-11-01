@@ -32,7 +32,7 @@
     <section v-if="tab === 'users'" class="panel">
       <h2>Users</h2>
       <article v-for="account in users" :key="account.id" class="row">
-        <div><strong>{{ account.username }}</strong><span>{{ account.email }} · {{ account.country === "NP" ? "Nepal" : account.country === "IN" ? "India" : "Country not set" }}</span></div>
+        <div><strong>{{ account.username }}</strong><span>{{ account.email }} · {{ account.country === "PK" ? "Pakistan" : account.country === "IN" ? "India" : "Country not set" }}</span></div>
         <div class="meta">Rs. {{ money(account.balance) }} · {{ account.status }}</div>
         <button @click="toggleUser(account)">{{ account.status === "active" ? "Suspend" : "Activate" }}</button>
       </article>
@@ -43,7 +43,7 @@
       <article v-for="account in kycUsers" :key="account.id" class="kyc-row">
         <div>
           <strong>{{ account.fullName || account.username }}</strong>
-          <span>{{ account.country === "NP" ? "Nepal" : "India" }} · {{ account.documentType }} · {{ account.documentNumber }}</span>
+          <span>{{ account.country === "PK" ? "Pakistan" : account.country === "IN" ? "India" : "Unknown country" }} · {{ account.documentType }} · {{ account.documentNumber }}</span>
           <span>Status: {{ account.kycStatus }}</span>
         </div>
         <div class="documents" v-if="account.kycDocuments">

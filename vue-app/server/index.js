@@ -175,7 +175,7 @@ app.post("/api/auth/otp/send", async (req, res) => {
     return res.status(400).json({ error: "Enter a valid email address" });
   }
   if (channel === "sms" && !/^\+[1-9]\d{7,14}$/.test(destination)) {
-    return res.status(400).json({ error: "Enter a phone number with country code, for example +977..." });
+    return res.status(400).json({ error: "Enter a phone number with country code, for example +91..." });
   }
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const db = readDb();
@@ -348,7 +348,7 @@ app.post(
     const db = readDb();
     const user = db.users.find((item) => item.id === req.user.id);
     if (!user || user.status !== "active") return res.status(403).json({ error: "Account unavailable" });
-    const country = req.body.country === "IN" ? "IN" : req.body.country === "NP" ? "NP" : "";
+    const country = req.body.country === "IN" ? "IN" : req.body.country === "PK" ? "PK" : "";
     const fullName = String(req.body.fullName || "").trim();
     const dateOfBirth = String(req.body.dateOfBirth || "").trim();
     const documentType = String(req.body.documentType || "").trim();
@@ -357,8 +357,12 @@ app.post(
     if (!country || !fullName || !dateOfBirth || !documentType || !documentNumber) {
       return res.status(400).json({ error: "Complete every KYC field" });
     }
-    if (!files.front || !files.selfie || (country === "NP" && !files.back)) {
-      return res.status(400).json({ error: country === "NP" ? "Upload front, back, and selfie" : "Upload front and selfie" });
+    const validDocumentType = country === "IN"
+      ? ["aadhaar", "pan", "passport"].includes(documentType)
+      : ["cnic", "passport"].includes(documentType);
+    if (!validDocumentType) return res.status(400).json({ error: "Select a valid document type for the chosen country" });
+    if (!files.front || !files.selfie || (country === "PK" && documentType === "cnic" && !files.back)) {
+      return res.status(400).json({ error: country === "PK" && documentType === "cnic" ? "Upload CNIC front, back, and selfie" : "Upload front and selfie" });
     }
     const saveName = (file) => file ? `/uploads/${path.basename(file.path)}` : "";
     for (const documentUrl of Object.values(user.kycDocuments || {})) {

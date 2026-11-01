@@ -197,7 +197,7 @@
           <p><strong>Balance:</strong> Rs. {{ formatMoney(balance) }}</p>
           <p><strong>Phone:</strong> {{ user?.phone || "Not set" }}</p>
           <p><strong>Email:</strong> {{ user?.email || "Not set" }}</p>
-          <p><strong>Country:</strong> {{ user?.country === "NP" ? "Nepal" : user?.country === "IN" ? "India" : "Not set" }}</p>
+          <p><strong>Country:</strong> {{ user?.country === "PK" ? "Pakistan" : user?.country === "IN" ? "India" : "Not set" }}</p>
           <p><strong>KYC:</strong> {{ kycLabel }}</p>
           <p><strong>Account:</strong> {{ user?.status || "Unknown" }}</p>
           <p><strong>Favorites:</strong> {{ favoriteNames }}</p>
@@ -205,26 +205,26 @@
         </div>
 
         <form v-else-if="modal === 'kyc'" class="modal-content kyc-form" @submit.prevent="submitKyc">
-          <p class="kyc-note">Provide identity details matching your Nepal or India documents.</p>
+          <p class="kyc-note">Provide identity details matching your India or Pakistan documents.</p>
           <select v-model="kycCountry" required>
             <option value="">Select country</option>
-            <option value="NP">Nepal</option>
             <option value="IN">India</option>
+            <option value="PK">Pakistan</option>
           </select>
           <input v-model="kycFullName" placeholder="Full legal name" required />
           <input v-model="kycDob" type="date" aria-label="Date of birth" required />
           <select v-model="kycDocumentType" required>
             <option value="">Select document</option>
-            <option v-if="kycCountry === 'NP'" value="citizenship">Nepal Citizenship</option>
-            <option v-if="kycCountry === 'NP'" value="passport">Nepal Passport</option>
             <option v-if="kycCountry === 'IN'" value="aadhaar">Aadhaar</option>
             <option v-if="kycCountry === 'IN'" value="pan">PAN Card</option>
             <option v-if="kycCountry === 'IN'" value="passport">Indian Passport</option>
+            <option v-if="kycCountry === 'PK'" value="cnic">CNIC</option>
+            <option v-if="kycCountry === 'PK'" value="passport">Pakistan Passport</option>
           </select>
           <input v-model="kycDocumentNumber" placeholder="Document number" required />
           <input v-model="kycAddress" placeholder="Residential address" required />
           <label>Front of document<input type="file" accept="image/jpeg,image/png,application/pdf" @change="setKycFile('front', $event)" required /></label>
-          <label v-if="kycCountry === 'NP'">Back of document<input type="file" accept="image/jpeg,image/png,application/pdf" @change="setKycFile('back', $event)" required /></label>
+          <label v-if="kycCountry === 'PK' && kycDocumentType === 'cnic'">Back of document<input type="file" accept="image/jpeg,image/png,application/pdf" @change="setKycFile('back', $event)" required /></label>
           <label>Selfie holding document<input type="file" accept="image/jpeg,image/png" @change="setKycFile('selfie', $event)" required /></label>
           <button class="primary-button full-button" type="submit" :disabled="kycLoading">{{ kycLoading ? "Submitting..." : "Submit KYC" }}</button>
         </form>
@@ -554,7 +554,7 @@ async function submitKyc(): Promise<void> {
     notify("Complete all KYC fields");
     return;
   }
-  if (!kycFiles.value.front || !kycFiles.value.selfie || (kycCountry.value === "NP" && !kycFiles.value.back)) {
+  if (!kycFiles.value.front || !kycFiles.value.selfie || (kycCountry.value === "PK" && kycDocumentType.value === "cnic" && !kycFiles.value.back)) {
     notify("Upload the required identity documents");
     return;
   }
