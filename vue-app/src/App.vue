@@ -134,7 +134,11 @@
         </div>
 
         <div v-if="modal === 'deposit'" class="modal-content">
-          <p v-if="!bonusClaimed" class="bonus-note">100% first deposit bonus active (up to Rs. 50,000)</p>
+          <div class="wallet-tabs">
+            <button :class="{ active: walletRequestType === 'deposit' }" @click="walletRequestType = 'deposit'">Deposit</button>
+            <button :class="{ active: walletRequestType === 'withdrawal' }" @click="walletRequestType = 'withdrawal'">Withdraw</button>
+          </div>
+          <p class="bonus-note">Payment gateway is not connected. Requests are sent to the admin for approval.</p>
           <div class="amount-options">
             <button
               v-for="preset in [500, 1000, 5000, 10000]"
@@ -151,8 +155,44 @@
             aria-label="Deposit amount"
             @input="amount = amount.replace(/\D/g, '')"
           />
-          <button class="primary-button full-button" @click="deposit">Deposit Now</button>
+          <button class="primary-button full-button" @click="submitWalletRequest">
+            Submit {{ walletRequestType === "deposit" ? "Deposit" : "Withdrawal" }} Request
+          </button>
         </div>
+
+        <form v-else-if="modal === 'auth'" class="modal-content auth-form" @submit.prevent="submitAuth">
+          <div class="wallet-tabs">
+            <button type="button" :class="{ active: authMode === 'login' }" @click="authMode = 'login'">Sign In</button>
+            <button type="button" :class="{ active: authMode === 'register' }" @click="authMode = 'register'">Register</button>
+          </div>
+          <button v-if="authMode === 'login'" type="button" class="google-button" @click="googleLogin">
+            Continue with Google
+          </button>
+          <input v-model="authUsername" autocomplete="username" placeholder="Username" aria-label="Username" required minlength="3" />
+          <template v-if="authMode === 'register'">
+            <select v-model="authCountry" aria-label="Country" required>
+              <option value="">Select country</option>
+              <option value="NP">Nepal</option>
+              <option value="IN">India</option>
+            </select>
+            <input v-model="authEmail" type="email" autocomplete="email" placeholder="Gmail or email address" aria-label="Email address" required />
+            <div class="verification-row">
+              <button type="button" class="secondary-button" @click="sendOtp('email')">Email Code</button>
+              <input v-model="emailOtp" inputmode="numeric" maxlength="6" placeholder="Email OTP" aria-label="Email OTP" />
+              <button type="button" class="verify-button" @click="verifyOtp('email')">Verify</button>
+            </div>
+            <input v-model="authPhone" autocomplete="tel" placeholder="Phone with country code (+977... or +91...)" aria-label="Phone number" required />
+            <div class="verification-row">
+              <button type="button" class="secondary-button" @click="sendOtp('sms')">SMS Code</button>
+              <input v-model="phoneOtp" inputmode="numeric" maxlength="6" placeholder="SMS OTP" aria-label="SMS OTP" />
+              <button type="button" class="verify-button" @click="verifyOtp('sms')">Verify</button>
+            </div>
+          </template>
+          <input v-model="authPassword" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password" required minlength="6" />
+          <button class="primary-button full-button" type="submit" :disabled="authLoading">
+            {{ authLoading ? "Please wait..." : authMode === "login" ? "Sign In" : "Create Account" }}
+          </button>
+        </form>
 
         <ul v-else-if="modal === 'menu'" class="menu-list">
           <li v-for="category in categories" :key="category">
@@ -171,11 +211,41 @@
         </div>
 
         <div v-else-if="modal === 'profile'" class="modal-content profile-info">
-          <p><strong>User:</strong> Player9821</p>
+          <p><strong>User:</strong> {{ user?.username || "Guest" }}</p>
           <p><strong>Balance:</strong> Rs. {{ formatMoney(balance) }}</p>
-          <p><strong>First deposit bonus:</strong> {{ bonusClaimed ? "Claimed" : "Available" }}</p>
+          <p><strong>Phone:</strong> {{ user?.phone || "Not set" }}</p>
+          <p><strong>Email:</strong> {{ user?.email || "Not set" }}</p>
+          <p><strong>Country:</strong> {{ user?.country === "NP" ? "Nepal" : user?.country === "IN" ? "India" : "Not set" }}</p>
+          <p><strong>KYC:</strong> {{ kycLabel }}</p>
+          <p><strong>Account:</strong> {{ user?.status || "Unknown" }}</p>
           <p><strong>Favorites:</strong> {{ favoriteNames }}</p>
+          <button v-if="user?.kycStatus !== 'verified'" class="primary-button" @click="modal = 'kyc'">Complete KYC Verification</button>
         </div>
+
+        <form v-else-if="modal === 'kyc'" class="modal-content kyc-form" @submit.prevent="submitKyc">
+          <p class="kyc-note">Provide identity details matching your Nepal or India documents.</p>
+          <select v-model="kycCountry" required>
+            <option value="">Select country</option>
+            <option value="NP">Nepal</option>
+            <option value="IN">India</option>
+          </select>
+          <input v-model="kycFullName" placeholder="Full legal name" required />
+          <input v-model="kycDob" type="date" aria-label="Date of birth" required />
+          <select v-model="kycDocumentType" required>
+            <option value="">Select document</option>
+            <option v-if="kycCountry === 'NP'" value="citizenship">Nepal Citizenship</option>
+            <option v-if="kycCountry === 'NP'" value="passport">Nepal Passport</option>
+            <option v-if="kycCountry === 'IN'" value="aadhaar">Aadhaar</option>
+            <option v-if="kycCountry === 'IN'" value="pan">PAN Card</option>
+            <option v-if="kycCountry === 'IN'" value="passport">Indian Passport</option>
+          </select>
+          <input v-model="kycDocumentNumber" placeholder="Document number" required />
+          <input v-model="kycAddress" placeholder="Residential address" required />
+          <label>Front of document<input type="file" accept="image/jpeg,image/png,application/pdf" @change="setKycFile('front', $event)" required /></label>
+          <label v-if="kycCountry === 'NP'">Back of document<input type="file" accept="image/jpeg,image/png,application/pdf" @change="setKycFile('back', $event)" required /></label>
+          <label>Selfie holding document<input type="file" accept="image/jpeg,image/png" @change="setKycFile('selfie', $event)" required /></label>
+          <button class="primary-button full-button" type="submit" :disabled="kycLoading">{{ kycLoading ? "Submitting..." : "Submit KYC" }}</button>
+        </form>
 
         <ul v-else-if="modal === 'inbox'" class="message-list">
           <li>Welcome to B9 Game! Claim your 100% first deposit bonus.</li>
@@ -211,7 +281,8 @@ import fishingCategory from "./assets/04_fishing.png";
 import inOutCategory from "./assets/05_inout.png";
 
 type Category = "Popular" | "PG Slot" | "Spribe" | "Fishing" | "InOut";
-type Modal = "deposit" | "menu" | "promo" | "profile" | "inbox" | null;
+type Modal = "deposit" | "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | null;
+type AuthUser = { id: string; username: string; phone: string; email: string; country: string; kycStatus: string; role: "user" | "admin"; balance: number; status: string; createdAt: string; lastLoginAt: string | null };
 type Game = {
   id: number;
   name: string;
@@ -258,16 +329,41 @@ const query = ref("");
 const searchOpen = ref(false);
 const showAll = ref(false);
 const modal = ref<Modal>(null);
-const signedIn = ref(true);
-const bonusClaimed = ref(false);
+const signedIn = ref(false);
 const amount = ref("1000");
 const categoryList = ref<HTMLElement | null>(null);
 const notice = ref("");
+const token = ref("");
+const user = ref<AuthUser | null>(null);
+const authMode = ref<"login" | "register">("login");
+const authUsername = ref("");
+const authPhone = ref("");
+const authEmail = ref("");
+const authCountry = ref("");
+const emailOtp = ref("");
+const phoneOtp = ref("");
+const authPassword = ref("");
+const authLoading = ref(false);
+const kycCountry = ref("");
+const kycFullName = ref("");
+const kycDob = ref("");
+const kycDocumentType = ref("");
+const kycDocumentNumber = ref("");
+const kycAddress = ref("");
+const kycLoading = ref(false);
+const kycFiles = ref<Record<string, File | undefined>>({});
+const walletRequestType = ref<"deposit" | "withdrawal">("deposit");
 let slideTimer: ReturnType<typeof setInterval> | undefined;
 let jackpotTimer: ReturnType<typeof setInterval> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
 const currentSlide = computed(() => slides[slide.value] ?? slides[0]!);
+const kycLabel = computed(() => {
+  if (user.value?.kycStatus === "verified") return "Verified";
+  if (user.value?.kycStatus === "pending") return "Pending review";
+  if (user.value?.kycStatus === "rejected") return "Rejected — resubmit";
+  return "Not submitted";
+});
 const visibleGames = computed(() => {
   const search = query.value.trim().toLowerCase();
   const filtered = search
@@ -275,21 +371,52 @@ const visibleGames = computed(() => {
     : games.filter((game) => game.categories.includes(selectedCategory.value));
   return showAll.value ? filtered : filtered.slice(0, 6);
 });
-const modalTitle = computed(() => modal.value === "promo" ? "Promotions" : modal.value ?? "");
+const modalTitle = computed(() => {
+  if (modal.value === "promo") return "Promotions";
+  if (modal.value === "auth") return authMode.value === "login" ? "Sign In" : "Create Account";
+  if (modal.value === "kyc") return "KYC Verification";
+  return modal.value ?? "";
+});
 const favoriteNames = computed(() => {
   const names = games.filter((game) => favorites.value.includes(game.id)).map((game) => game.name);
   return names.length ? names.join(", ") : "None yet";
 });
 
-onMounted(() => {
+onMounted(async () => {
   slideTimer = setInterval(() => { slide.value = (slide.value + 1) % slides.length; }, 4000);
   jackpotTimer = setInterval(() => { jackpot.value += Math.random() * 25; }, 1200);
+  token.value = localStorage.getItem("b9_token") || "";
+  if (token.value) await restoreSession();
 });
 onUnmounted(() => {
   if (slideTimer) clearInterval(slideTimer);
   if (jackpotTimer) clearInterval(jackpotTimer);
   if (noticeTimer) clearTimeout(noticeTimer);
 });
+
+async function api(path: string, options: RequestInit = {}): Promise<any> {
+  const headers = new Headers(options.headers || {});
+  headers.set("Content-Type", "application/json");
+  if (token.value) headers.set("Authorization", `Bearer ${token.value}`);
+  const response = await fetch(path, { ...options, headers });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+async function restoreSession(): Promise<void> {
+  try {
+    const data = await api("/api/auth/me");
+    user.value = data.user;
+    signedIn.value = true;
+    balance.value = data.user.balance;
+  } catch {
+    localStorage.removeItem("b9_token");
+    token.value = "";
+    signedIn.value = false;
+    user.value = null;
+  }
+}
 
 function formatMoney(value: number): string {
   return value.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
@@ -302,6 +429,7 @@ function notify(message: string): void {
 function requireSignIn(): boolean {
   if (signedIn.value) return false;
   notify("Please sign in first");
+  modal.value = "auth";
   return true;
 }
 function openDeposit(): void {
@@ -320,37 +448,192 @@ function toggleFavorite(id: number): void {
     ? favorites.value.filter((favorite) => favorite !== id)
     : [...favorites.value, id];
 }
-function play(name: string): void {
+async function play(name: string): Promise<void> {
   if (requireSignIn()) return;
   if (balance.value < 10) {
     notify("Low balance — please deposit");
     modal.value = "deposit";
     return;
   }
-  const bet = 10;
-  const win = Math.random() < 0.45 ? Math.round(bet * (1 + Math.random() * 4)) : 0;
-  balance.value = balance.value - bet + win;
-  notify(win ? `${name}: you won Rs. ${win}!` : `${name}: lost Rs. ${bet}. Try again!`);
+  try {
+    const data = await api("/api/wallet/play", { method: "POST", body: "{}" });
+    balance.value = data.balance;
+    if (user.value) user.value.balance = data.balance;
+    notify(data.win ? `${name}: you won Rs. ${data.win}!` : `${name}: lost Rs. 10. Try again!`);
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "Unable to play");
+  }
 }
-function deposit(): void {
+async function submitWalletRequest(): Promise<void> {
   const value = Number(amount.value);
   if (!value || value < 100) {
     notify("Minimum deposit is Rs. 100");
     return;
   }
-  const bonus = bonusClaimed.value ? 0 : Math.min(value, 50000);
-  balance.value += value + bonus;
-  if (bonus) bonusClaimed.value = true;
-  modal.value = null;
-  notify(`Deposited Rs. ${value}${bonus ? ` + Rs. ${bonus} bonus` : ""}`);
+  try {
+    await api("/api/wallet/request", {
+      method: "POST",
+      body: JSON.stringify({ type: walletRequestType.value, amount: value }),
+    });
+    modal.value = null;
+    notify(`${walletRequestType.value === "deposit" ? "Deposit" : "Withdrawal"} request submitted for admin approval`);
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "Request failed");
+  }
 }
 function claimPromotion(): void {
   if (requireSignIn()) return;
   modal.value = "deposit";
 }
+async function sendOtp(channel: "email" | "sms"): Promise<void> {
+  const destination = channel === "email" ? authEmail.value.trim() : authPhone.value.trim();
+  if (!destination) {
+    notify(channel === "email" ? "Enter your email first" : "Enter your phone number first");
+    return;
+  }
+  try {
+    const data = await api("/api/auth/otp/send", {
+      method: "POST",
+      body: JSON.stringify({ channel, destination }),
+    });
+    notify(data.devCode ? `Development verification code: ${data.devCode}` : data.message);
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "Could not send verification code");
+  }
+}
+async function verifyOtp(channel: "email" | "sms"): Promise<void> {
+  const destination = channel === "email" ? authEmail.value.trim() : authPhone.value.trim();
+  const code = channel === "email" ? emailOtp.value : phoneOtp.value;
+  try {
+    await api("/api/auth/otp/verify", {
+      method: "POST",
+      body: JSON.stringify({ channel, destination, code }),
+    });
+    notify(`${channel === "email" ? "Email" : "Phone"} verified`);
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "Verification failed");
+  }
+}
+async function googleLogin(): Promise<void> {
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+  if (!clientId) {
+    notify("Google Sign-In is not configured");
+    return;
+  }
+  if (!document.querySelector('script[src="https://accounts.google.com/gsi/client"]')) {
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Could not load Google Sign-In"));
+      document.head.appendChild(script);
+    });
+  }
+  const google = (window as unknown as { google?: { accounts?: { id?: { initialize: (options: { client_id: string; callback: (response: { credential: string }) => void }) => void; prompt: () => void } } } }).google;
+  if (!google?.accounts?.id) return;
+  google.accounts.id.initialize({
+    client_id: clientId,
+    callback: async (response) => {
+      try {
+        const data = await api("/api/auth/google", {
+          method: "POST",
+          body: JSON.stringify({ credential: response.credential }),
+        });
+        token.value = data.token;
+        localStorage.setItem("b9_token", data.token);
+        user.value = data.user;
+        signedIn.value = true;
+        balance.value = data.user.balance;
+        modal.value = null;
+        notify(`Welcome, ${data.user.username}!`);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : "Google sign-in failed");
+      }
+    },
+  });
+  google.accounts.id.prompt();
+}
+function setKycFile(field: "front" | "back" | "selfie", event: Event): void {
+  const input = event.target as HTMLInputElement;
+  kycFiles.value[field] = input.files?.[0];
+}
+async function submitKyc(): Promise<void> {
+  if (!signedIn.value) return;
+  if (!kycCountry.value || !kycFullName.value || !kycDob.value || !kycDocumentType.value || !kycDocumentNumber.value) {
+    notify("Complete all KYC fields");
+    return;
+  }
+  if (!kycFiles.value.front || !kycFiles.value.selfie || (kycCountry.value === "NP" && !kycFiles.value.back)) {
+    notify("Upload the required identity documents");
+    return;
+  }
+  const form = new FormData();
+  form.append("country", kycCountry.value);
+  form.append("fullName", kycFullName.value);
+  form.append("dateOfBirth", kycDob.value);
+  form.append("documentType", kycDocumentType.value);
+  form.append("documentNumber", kycDocumentNumber.value);
+  form.append("address", kycAddress.value);
+  if (kycFiles.value.front) form.append("front", kycFiles.value.front);
+  if (kycFiles.value.back) form.append("back", kycFiles.value.back);
+  if (kycFiles.value.selfie) form.append("selfie", kycFiles.value.selfie);
+  kycLoading.value = true;
+  try {
+    const headers = new Headers();
+    if (token.value) headers.set("Authorization", `Bearer ${token.value}`);
+    const response = await fetch("/api/auth/kyc", { method: "POST", headers, body: form });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "KYC submission failed");
+    user.value = data.user;
+    modal.value = null;
+    notify("KYC submitted for admin review");
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "KYC submission failed");
+  } finally {
+    kycLoading.value = false;
+  }
+}
+async function submitAuth(): Promise<void> {
+  authLoading.value = true;
+  try {
+    const path = authMode.value === "login" ? "/api/auth/login" : "/api/auth/register";
+    const data = await api(path, {
+      method: "POST",
+      body: JSON.stringify({
+        username: authUsername.value,
+        phone: authPhone.value,
+        email: authEmail.value,
+        country: authCountry.value,
+        password: authPassword.value,
+      }),
+    });
+    token.value = data.token;
+    localStorage.setItem("b9_token", data.token);
+    user.value = data.user;
+    signedIn.value = true;
+    balance.value = data.user.balance;
+    modal.value = null;
+    authPassword.value = "";
+    notify(authMode.value === "login" ? `Welcome back, ${data.user.username}!` : "Account created successfully");
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "Authentication failed");
+  } finally {
+    authLoading.value = false;
+  }
+}
 function toggleSignIn(): void {
-  signedIn.value = !signedIn.value;
-  notify(signedIn.value ? "Welcome back!" : "Signed out");
+  if (signedIn.value) {
+    token.value = "";
+    localStorage.removeItem("b9_token");
+    signedIn.value = false;
+    user.value = null;
+    balance.value = 0;
+    notify("Signed out");
+  } else {
+    authMode.value = "login";
+    modal.value = "auth";
+  }
 }
 function openProfile(): void {
   if (!requireSignIn()) modal.value = "profile";
@@ -538,6 +821,20 @@ button { cursor: pointer; }
 .profile-info p { margin: 0; font-size: 14px; }
 .message-list li { padding: 12px; border-radius: 10px; background: #e5f3e3; font-size: 13px; }
 .toast { position: fixed; z-index: 20; bottom: 88px; left: 50%; max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 99px; color: white; background: #27382b; box-shadow: 0 4px 16px rgb(0 0 0 / 20%); text-align: center; font-size: 13px; transform: translateX(-50%); }
+.wallet-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wallet-tabs button { padding: 10px; border: 1px solid #d5ded6; border-radius: 10px; color: #536358; background: white; }
+.wallet-tabs button.active { border-color: #25a95b; color: #1b7d43; background: #e7f4e9; font-weight: 750; }
+.auth-form input { width: 100%; padding: 12px 14px; border: 1px solid #d5ded6; border-radius: 12px; outline-color: #27a95c; }
+.primary-button:disabled { opacity: .65; cursor: wait; }
+.auth-form select, .kyc-form select, .kyc-form input { width: 100%; min-height: 42px; padding: 10px 12px; border: 1px solid #d5ded6; border-radius: 10px; background: white; outline-color: #27a95c; }
+.google-button { width: 100%; min-height: 42px; border: 1px solid #d5ded6; border-radius: 10px; color: #315940; background: white; font-weight: 700; }
+.verification-row { display: grid; grid-template-columns: 92px 1fr 64px; gap: 7px; }
+.verification-row input { width: 100%; min-height: 40px; padding: 8px; border: 1px solid #d5ded6; border-radius: 9px; }
+.secondary-button, .verify-button { border: 0; border-radius: 9px; color: white; font-size: 12px; }
+.secondary-button { background: #5b7965; } .verify-button { background: #23a85a; }
+.kyc-note { margin: 0; padding: 9px; border-radius: 9px; color: #267c36; background: #e5f3e3; font-size: 12px; }
+.kyc-form label { display: flex; flex-direction: column; gap: 5px; color: #536358; font-size: 12px; }
+.kyc-form label input { padding: 7px; border-style: dashed; }
 @media (min-width: 480px) {
   .page-frame { min-height: 100vh; }
 }

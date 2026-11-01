@@ -1,4 +1,5 @@
 import { createApp } from "vue";
 import App from "./App.vue";
+import AdminApp from "./AdminApp.vue";
 
-createApp(App).mount("#app");
+createApp(window.location.pathname.startsWith("/admin") ? AdminApp : App).mount("#app");

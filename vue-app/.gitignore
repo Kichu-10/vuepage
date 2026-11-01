@@ -1,3 +1,6 @@
 node_modules/
 dist/
 *.local
+server/database.json
+server/database.json.tmp
+server/uploads/
