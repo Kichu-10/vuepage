@@ -53,7 +53,10 @@
       <section class="announcement" aria-label="Latest announcement">
         <Volume2 class="announcement-volume" :size="20" :stroke-width="2.6" />
         <p>Get 100% Bonus on Your First Deposit &amp; Start Winning!</p>
-        <button class="inbox-button" aria-label="Open inbox" @click="modal = 'inbox'"><Mail :size="23" /></button>
+        <button class="inbox-button" aria-label="Open inbox" @click="openInbox">
+          <Mail :size="23" />
+          <span v-if="unreadCount > 0" class="inbox-badge">{{ unreadCount > 99 ? "99+" : unreadCount }}</span>
+        </button>
       </section>
 
       <nav class="categories" aria-label="Game categories">
@@ -139,6 +142,15 @@
             <button :class="{ active: walletRequestType === 'withdrawal' }" @click="walletRequestType = 'withdrawal'">Withdraw</button>
           </div>
           <p class="bonus-note">Submit a request for admin review and balance approval.</p>
+          <div v-if="walletRequestType === 'deposit'" class="manual-payment-details">
+            <strong>{{ paymentDetails.bankName }}</strong>
+            <p v-if="paymentDetails.accountName"><span>Account name:</span> {{ paymentDetails.accountName }}</p>
+            <p v-if="paymentDetails.accountNumber"><span>Account number:</span> {{ paymentDetails.accountNumber }}</p>
+            <p v-if="paymentDetails.iban"><span>IBAN:</span> {{ paymentDetails.iban }}</p>
+            <p v-if="paymentDetails.upiId"><span>UPI ID:</span> {{ paymentDetails.upiId }}</p>
+            <p v-if="paymentDetails.walletNumber"><span>{{ paymentDetails.walletName || "Wallet" }}:</span> {{ paymentDetails.walletNumber }}</p>
+            <small>{{ paymentDetails.instructions }}</small>
+          </div>
           <div class="amount-options">
             <button
               v-for="preset in [500, 1000, 5000, 10000]"
@@ -155,6 +167,22 @@
             aria-label="Deposit amount"
             @input="amount = amount.replace(/\D/g, '')"
           />
+          <input
+            v-model="paymentMethod"
+            class="amount-input"
+            :placeholder="walletRequestType === 'deposit' ? 'Payment method (bank, UPI, wallet)' : 'Withdrawal destination (bank, UPI, wallet)'"
+          />
+          <input v-model="paymentReference" class="amount-input" placeholder="Transaction or payment reference" required />
+          <textarea
+            v-model="paymentNote"
+            class="manual-note"
+            rows="3"
+            :placeholder="walletRequestType === 'withdrawal' ? 'Account or wallet details and withdrawal instructions' : 'Optional payment note'"
+          />
+          <label v-if="walletRequestType === 'deposit'" class="payment-proof-label">
+            Payment receipt or screenshot
+            <input type="file" accept="image/jpeg,image/png,application/pdf" @change="setPaymentProof" required />
+          </label>
           <button class="primary-button full-button" @click="submitWalletRequest">
             Submit {{ walletRequestType === "deposit" ? "Deposit" : "Withdrawal" }} Request
           </button>
@@ -194,11 +222,11 @@
           <li><button @click="openProfile"><UserRound :size="20" />Profile &amp; account</button></li>
           <li><button @click="openDeposit"><Wallet :size="20" />Deposit &amp; withdraw</button></li>
           <li><button @click="openTransactionHistory"><Mail :size="20" />Transaction history</button></li>
-          <li><button @click="openKyc"><UserRound :size="20" />KYC verification</button></li>
+          <li v-if="signedIn && user?.kycStatus !== 'verified'"><button @click="openKyc"><UserRound :size="20" />KYC verification</button></li>
           <li class="menu-section-label">Discover</li>
           <li><button @click="showFavorites"><Star :size="20" />My favorites</button></li>
           <li><button @click="modal = 'promo'"><Gift :size="20" />Promotions</button></li>
-          <li><button @click="modal = 'inbox'"><Mail :size="20" />Inbox</button></li>
+          <li><button @click="openInbox"><Mail :size="20" />Inbox</button></li>
           <li class="menu-section-label">Game categories</li>
           <li v-for="category in categories" :key="category">
             <button @click="selectCategory(category); modal = null"><Flame :size="20" />{{ category }}</button>
@@ -215,6 +243,8 @@
             <div>
               <strong>{{ transaction.type === "deposit" ? "Deposit" : "Withdrawal" }}</strong>
               <small>{{ formatDate(transaction.createdAt) }}</small>
+              <small v-if="transaction.paymentMethod">Method: {{ transaction.paymentMethod }}</small>
+              <small v-if="transaction.paymentReference">Reference: {{ transaction.paymentReference }}</small>
             </div>
             <div class="transaction-result">
               <strong>Rs. {{ formatMoney(transaction.amount) }}</strong>
@@ -238,8 +268,8 @@
 
         <div v-else-if="modal === 'support'" class="modal-content support-content">
           <p>For account, deposit, withdrawal, or KYC help:</p>
-          <button class="support-row" @click="modal = 'inbox'"><Mail :size="20" /><span><strong>Message center</strong><small>View account notices</small></span></button>
-          <button class="support-row" @click="openKyc"><UserRound :size="20" /><span><strong>KYC assistance</strong><small>Review document requirements</small></span></button>
+          <button class="support-row" @click="openInbox"><Mail :size="20" /><span><strong>Message center</strong><small>View account notices</small></span></button>
+          <button v-if="signedIn && user?.kycStatus !== 'verified'" class="support-row" @click="openKyc"><UserRound :size="20" /><span><strong>KYC assistance</strong><small>Review document requirements</small></span></button>
           <button class="support-row" @click="modal = 'profile'"><UserRound :size="20" /><span><strong>Account details</strong><small>Review your profile</small></span></button>
         </div>
 
@@ -290,10 +320,22 @@
           <button class="primary-button full-button" type="submit" :disabled="kycLoading">{{ kycLoading ? "Submitting..." : "Submit KYC" }}</button>
         </form>
 
-        <ul v-else-if="modal === 'inbox'" class="message-list">
-          <li>Welcome to B9 Game! Claim your 100% first deposit bonus.</li>
-          <li>Jackpot is over 10 million — play now!</li>
-        </ul>
+        <div v-else-if="modal === 'inbox'" class="message-list">
+          <p v-if="inboxLoading" class="empty-state">Loading inbox...</p>
+          <p v-else-if="inboxMessages.length === 0" class="empty-state">No account messages yet.</p>
+          <article
+            v-for="message in inboxMessages"
+            :key="message.id"
+            class="inbox-message"
+            :class="{ unread: !message.read, [`inbox-${message.type}`]: true }"
+          >
+            <div class="inbox-message-heading">
+              <strong>{{ message.title }}</strong>
+              <small>{{ formatDate(message.createdAt) }}</small>
+            </div>
+            <p>{{ message.message }}</p>
+          </article>
+        </div>
       </section>
     </div>
 
@@ -326,7 +368,9 @@ import inOutCategory from "./assets/05_inout.png";
 type Category = "Popular" | "PG Slot" | "Spribe" | "Fishing" | "InOut";
 type Modal = "deposit" | "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | "transactions" | "favorites" | "support" | null;
 type AuthUser = { id: string; username: string; phone: string; email: string; country: string; kycStatus: string; role: "user" | "admin"; balance: number; status: string; createdAt: string; lastLoginAt: string | null };
-type WalletTransaction = { id: string; type: "deposit" | "withdrawal"; amount: number; status: string; createdAt: string };
+type WalletTransaction = { id: string; type: "deposit" | "withdrawal"; amount: number; status: string; createdAt: string; paymentMethod?: string; paymentReference?: string; paymentNote?: string };
+type PaymentDetails = { bankName: string; accountName: string; accountNumber: string; iban: string; upiId: string; walletName: string; walletNumber: string; instructions: string };
+type InboxMessage = { id: string; type: string; title: string; message: string; read: boolean; createdAt: string };
 type Game = {
   id: number;
   name: string;
@@ -396,7 +440,18 @@ const kycFiles = ref<Record<string, File | undefined>>({});
 const walletRequestType = ref<"deposit" | "withdrawal">("deposit");
 const walletTransactions = ref<WalletTransaction[]>([]);
 const transactionLoading = ref(false);
+const paymentMethod = ref("");
+const paymentReference = ref("");
+const paymentNote = ref("");
+const paymentProof = ref<File | undefined>();
+const paymentDetails = ref<PaymentDetails>({
+  bankName: "", accountName: "", accountNumber: "", iban: "", upiId: "", walletName: "", walletNumber: "", instructions: "",
+});
+const inboxMessages = ref<InboxMessage[]>([]);
+const unreadCount = ref(0);
+const inboxLoading = ref(false);
 let slideTimer: ReturnType<typeof setInterval> | undefined;
+let inboxTimer: ReturnType<typeof setInterval> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let googleScriptPromise: Promise<void> | undefined;
 let googleInitialized = false;
@@ -424,6 +479,7 @@ const modalTitle = computed(() => {
   if (modal.value === "support") return "Help & Support";
   if (modal.value === "profile") return "Profile & Account";
   if (modal.value === "menu") return "Menu";
+  if (modal.value === "inbox") return "Inbox";
   return modal.value ?? "";
 });
 const favoriteNames = computed(() => {
@@ -440,16 +496,25 @@ watch([modal, authMode], () => {
 onMounted(async () => {
   slideTimer = setInterval(() => { slide.value = (slide.value + 1) % slides.length; }, 4000);
   token.value = localStorage.getItem("b9_token") || "";
-  if (token.value) await restoreSession();
+  try {
+    paymentDetails.value = await fetch("/api/payment/details").then((response) => response.json());
+  } catch {
+    paymentDetails.value.instructions = "Transfer the exact amount, then submit the payment reference and proof.";
+  }
+  if (token.value) {
+    await restoreSession();
+    if (signedIn.value) startInboxPolling();
+  }
 });
 onUnmounted(() => {
   if (slideTimer) clearInterval(slideTimer);
   if (noticeTimer) clearTimeout(noticeTimer);
+  if (inboxTimer) clearInterval(inboxTimer);
 });
 
 async function api(path: string, options: RequestInit = {}): Promise<any> {
   const headers = new Headers(options.headers || {});
-  headers.set("Content-Type", "application/json");
+  if (!(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (token.value) headers.set("Authorization", "Bearer " + token.value);
   const response = await fetch(path, { ...options, headers });
   const data = await response.json().catch(() => ({}));
@@ -468,6 +533,39 @@ async function restoreSession(): Promise<void> {
     token.value = "";
     signedIn.value = false;
     user.value = null;
+  }
+}
+
+async function refreshInbox(): Promise<void> {
+  if (!signedIn.value || !token.value) return;
+  try {
+    const data = await api("/api/inbox");
+    inboxMessages.value = data.notifications || [];
+    unreadCount.value = Number(data.unreadCount || 0);
+  } catch {
+    unreadCount.value = 0;
+  }
+}
+
+function startInboxPolling(): void {
+  if (inboxTimer) clearInterval(inboxTimer);
+  void refreshInbox();
+  inboxTimer = setInterval(() => { void refreshInbox(); }, 5000);
+}
+
+async function openInbox(): Promise<void> {
+  if (requireSignIn()) return;
+  modal.value = "inbox";
+  inboxLoading.value = true;
+  await refreshInbox();
+  try {
+    await api("/api/inbox/read", { method: "PATCH", body: "{}" });
+    unreadCount.value = 0;
+    inboxMessages.value = inboxMessages.value.map((message) => ({ ...message, read: true }));
+  } catch {
+    // The inbox remains available even if the read-state update fails.
+  } finally {
+    inboxLoading.value = false;
   }
 }
 
@@ -520,12 +618,31 @@ async function submitWalletRequest(): Promise<void> {
     notify("Minimum deposit is Rs. 100");
     return;
   }
+  if (!paymentReference.value.trim()) {
+    notify("Enter the payment or transaction reference");
+    return;
+  }
+  if (walletRequestType.value === "deposit" && !paymentProof.value) {
+    notify("Upload the payment receipt or screenshot");
+    return;
+  }
+  const form = new FormData();
+  form.append("type", walletRequestType.value);
+  form.append("amount", String(value));
+  form.append("paymentMethod", paymentMethod.value.trim());
+  form.append("paymentReference", paymentReference.value.trim());
+  form.append("paymentNote", paymentNote.value.trim());
+  if (paymentProof.value) form.append("proof", paymentProof.value);
   try {
     await api("/api/wallet/request", {
       method: "POST",
-      body: JSON.stringify({ type: walletRequestType.value, amount: value }),
+      body: form,
     });
     modal.value = null;
+    paymentMethod.value = "";
+    paymentReference.value = "";
+    paymentNote.value = "";
+    paymentProof.value = undefined;
     notify(`${walletRequestType.value === "deposit" ? "Deposit" : "Withdrawal"} request submitted for admin approval`);
   } catch (error) {
     notify(error instanceof Error ? error.message : "Request failed");
@@ -589,6 +706,7 @@ async function googleLogin(): Promise<void> {
           signedIn.value = true;
           balance.value = data.user.balance;
           modal.value = null;
+          startInboxPolling();
           notify(`Welcome, ${data.user.username}!`);
         } catch (error) {
           notify(error instanceof Error ? error.message : "Google sign-in failed");
@@ -612,6 +730,10 @@ async function googleLogin(): Promise<void> {
 function setKycFile(field: "front" | "back" | "selfie", event: Event): void {
   const input = event.target as HTMLInputElement;
   kycFiles.value[field] = input.files?.[0];
+}
+function setPaymentProof(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  paymentProof.value = input.files?.[0];
 }
 async function submitKyc(): Promise<void> {
   if (!signedIn.value) return;
@@ -668,6 +790,7 @@ async function submitAuth(): Promise<void> {
     signedIn.value = true;
     balance.value = data.user.balance;
     modal.value = null;
+    startInboxPolling();
     authPassword.value = "";
     if (authMode.value === "register") authCountry.value = "";
     notify(authMode.value === "login" ? `Welcome back, ${data.user.username}!` : "Account created successfully");
@@ -684,6 +807,9 @@ function toggleSignIn(): void {
     signedIn.value = false;
     user.value = null;
     balance.value = 0;
+    unreadCount.value = 0;
+    inboxMessages.value = [];
+    if (inboxTimer) clearInterval(inboxTimer);
     notify("Signed out");
   } else {
     authMode.value = "login";
@@ -806,7 +932,8 @@ button { cursor: pointer; }
 .announcement { display: flex; min-height: 43px; align-items: center; gap: 10px; padding: 5px 7px 5px 14px; border-radius: 14px; color: #426d51; background: #e7f4e9; }
 .announcement-volume { flex: 0 0 auto; color: #36a564; fill: #36a564; }
 .announcement p { flex: 1; overflow: hidden; margin: 0; font-size: clamp(11px, 3.4vw, 14px); white-space: nowrap; text-overflow: ellipsis; }
-.inbox-button { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 10px; color: white; background: #17a854; }
+.inbox-button { position: relative; display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 10px; color: white; background: #17a854; }
+.inbox-badge { position: absolute; top: -6px; right: -7px; min-width: 18px; height: 18px; padding: 0 4px; border: 2px solid white; border-radius: 999px; color: white; background: #df3f4b; font-size: 9px; font-weight: 800; line-height: 14px; }
 .categories { display: flex; min-height: 91px; align-items: center; padding: 6px 5px 4px; border-radius: 19px; background: white; box-shadow: 0 3px 13px rgb(27 88 47 / 5%); }
 .category-arrow { display: grid; width: 24px; flex: 0 0 24px; place-items: center; padding: 0; border: 0; color: #8d9991; background: none; }
 .category-list { display: flex; flex: 1; justify-content: space-around; gap: 2px; overflow-x: auto; scrollbar-width: none; }
@@ -884,6 +1011,13 @@ button { cursor: pointer; }
 .amount-options button { padding: 9px 3px; border: 1px solid #d5ded6; border-radius: 9px; background: white; font-size: 13px; }
 .amount-options button.chosen { border-color: #319d42; background: #e5f3e3; font-weight: 700; }
 .amount-input { width: 100%; padding: 11px 14px; border: 1px solid #d5ded6; border-radius: 12px; outline-color: #27a95c; }
+.manual-payment-details { padding: 11px; border-radius: 10px; background: #edf5ef; }
+.manual-payment-details p { margin: 5px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.manual-payment-details p span { color: #718076; }
+.manual-payment-details small { display: block; margin-top: 7px; color: #667469; line-height: 1.45; }
+.manual-note { width: 100%; resize: vertical; padding: 11px 14px; border: 1px solid #d5ded6; border-radius: 12px; font-family: inherit; outline-color: #27a95c; }
+.payment-proof-label { display: flex; flex-direction: column; gap: 6px; color: #536358; font-size: 12px; }
+.payment-proof-label input { min-height: 42px; padding: 7px; border: 1px dashed #d5ded6; border-radius: 10px; }
 .primary-button { border: 0; border-radius: 999px; padding: 8px 14px; color: white; background: #23ae5e; font-weight: 650; }
 .full-button { width: 100%; padding: 12px; }
 .menu-list, .message-list { margin: 0; padding: 0; list-style: none; }
@@ -904,7 +1038,13 @@ button { cursor: pointer; }
 .promo-card p { margin: 3px 0 0; color: #707b73; font-size: 12px; }
 .promo-card .primary-button { padding: 7px 12px; font-size: 12px; }
 .profile-info p { margin: 0; font-size: 14px; }
-.message-list li { padding: 12px; border-radius: 10px; background: #e5f3e3; font-size: 13px; }
+.message-list { max-height: 460px; overflow-y: auto; }
+.inbox-message { padding: 12px; border-radius: 10px; background: #f1f6f2; border-left: 3px solid #aebbb1; }
+.inbox-message.unread { border-left-color: #22a95a; background: #e5f3e3; }
+.inbox-message-heading { display: flex; justify-content: space-between; gap: 8px; }
+.inbox-message-heading small { flex: 0 0 auto; color: #829087; font-size: 10px; }
+.inbox-message p { margin: 6px 0 0; color: #607166; font-size: 12px; line-height: 1.45; }
+.inbox-bet, .inbox-lottery, .inbox-game { border-left-color: #e7a52a; }
 .transaction-list { max-height: 420px; overflow-y: auto; }
 .transaction-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 11px; background: #edf5ef; }
 .transaction-card > div { display: flex; flex-direction: column; gap: 3px; }

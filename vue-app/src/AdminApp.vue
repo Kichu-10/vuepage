@@ -74,6 +74,12 @@
       <h2>Transactions</h2>
       <article v-for="item in transactions" :key="item.id" class="row">
         <div><strong>{{ item.username }}</strong><span>{{ item.type }} · Rs. {{ money(item.amount) }}</span></div>
+        <div class="manual-details">
+          <span v-if="item.paymentMethod">Method: {{ item.paymentMethod }}</span>
+          <span v-if="item.paymentReference">Reference: {{ item.paymentReference }}</span>
+          <span v-if="item.paymentNote">Note: {{ item.paymentNote }}</span>
+          <button v-if="item.proofFile" class="proof-button" @click="openProof(item.proofFile)">View payment proof</button>
+        </div>
         <div :class="item.status">{{ item.status }}</div>
         <div v-if="item.status === 'pending'" class="actions">
           <button @click="processTransaction(item.id, 'approved')">Approve</button>
@@ -91,7 +97,7 @@ type Account = {
   id: string; username: string; email: string; phone: string; country: string; balance: number; status: string;
   fullName: string; documentType: string; documentNumber: string; kycStatus: string; kycDocuments: Record<string, string>;
 };
-type Transaction = { id: string; username: string; type: string; amount: number; status: string };
+type Transaction = { id: string; username: string; type: string; amount: number; status: string; paymentMethod?: string; paymentReference?: string; paymentNote?: string; proofFile?: string };
 
 const token = ref(localStorage.getItem("b9_admin_token") || "");
 const signedIn = ref(Boolean(token.value));
@@ -179,6 +185,16 @@ async function processTransaction(id: string, status: "approved" | "rejected") {
   await refresh();
 }
 
+async function openProof(filename: string) {
+  const response = await fetch(`/uploads/${encodeURIComponent(filename)}`, {
+    headers: { Authorization: `Bearer ${token.value}` },
+  });
+  if (!response.ok) throw new Error("Could not open payment proof");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener");
+}
+
 async function reviewKyc(id: string, status: "verified" | "rejected") {
   await api(`/api/admin/users/${id}/kyc`, { method: "PATCH", body: JSON.stringify({ status }) });
   await refresh();
@@ -234,6 +250,9 @@ body { margin: 0; }
 .row button, .kyc-row button, .documents button { padding: 8px 10px; border: 0; border-radius: 8px; color: white; background: #159a4b; cursor: pointer; }
 .actions { display: flex; gap: 5px; }
 .actions .reject { background: #b85b5b; }
+.manual-details { flex: 1.5; min-width: 180px; }
+.manual-details span { overflow-wrap: anywhere; }
+.manual-details .proof-button { margin-top: 6px; padding: 6px 8px; font-size: 11px; }
 .documents { display: flex; gap: 5px; }
 .pending { color: #b47b20; } .approved, .verified { color: #23834a; } .rejected { color: #b85b5b; }
 .pending, .approved, .rejected, .verified { font-size: 12px; text-transform: capitalize; }

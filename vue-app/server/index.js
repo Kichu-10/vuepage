@@ -39,6 +39,18 @@ app.use("/api/admin", (_req, res, next) => {
   next();
 });
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+app.get("/api/payment/details", (_req, res) => {
+  res.json({
+    bankName: process.env.MANUAL_PAYMENT_BANK_NAME || "Admin will provide bank details",
+    accountName: process.env.MANUAL_PAYMENT_ACCOUNT_NAME || "",
+    accountNumber: process.env.MANUAL_PAYMENT_ACCOUNT_NUMBER || "",
+    iban: process.env.MANUAL_PAYMENT_IBAN || "",
+    upiId: process.env.MANUAL_PAYMENT_UPI_ID || "",
+    walletName: process.env.MANUAL_PAYMENT_WALLET_NAME || "",
+    walletNumber: process.env.MANUAL_PAYMENT_WALLET_NUMBER || "",
+    instructions: process.env.MANUAL_PAYMENT_INSTRUCTIONS || "Transfer the exact amount, then submit the request with your payment reference and proof.",
+  });
+});
 const uploadDir = path.join(__dirname, "uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({
@@ -60,6 +72,21 @@ function writeDb(db) {
   const tempFile = `${dataFile}.tmp`;
   fs.writeFileSync(tempFile, JSON.stringify(db, null, 2));
   fs.renameSync(tempFile, dataFile);
+}
+
+function addNotification(db, userId, type, title, message, relatedId = "") {
+  db.notifications ||= [];
+  db.notifications.unshift({
+    id: randomUUID(),
+    userId,
+    type,
+    title,
+    message,
+    relatedId,
+    read: false,
+    createdAt: new Date().toISOString(),
+  });
+  if (db.notifications.length > 1000) db.notifications.length = 1000;
 }
 
 function publicUser(user) {
@@ -440,6 +467,8 @@ app.post(
       selfie: saveName(files.selfie?.[0]),
     };
     writeDb(db);
+    addNotification(db, user.id, "kyc", "KYC submitted", "Your identity documents are pending administrator review.", user.id);
+    writeDb(db);
     res.status(201).json({ message: "KYC submitted for review", user: publicUser(user) });
   },
 );
@@ -448,10 +477,15 @@ app.post("/api/wallet/play", auth, (req, res) => {
   res.status(503).json({ error: "Game provider is not connected. This account will not be charged." });
 });
 
-app.post("/api/wallet/request", auth, (req, res) => {
+app.post("/api/wallet/request", auth, upload.single("proof"), (req, res) => {
   const type = req.body.type === "withdrawal" ? "withdrawal" : "deposit";
   const amount = Number(req.body.amount);
   if (!Number.isFinite(amount) || amount < 100) return res.status(400).json({ error: "Minimum amount is Rs. 100" });
+  const paymentReference = String(req.body.paymentReference || "").trim();
+  const paymentNote = String(req.body.paymentNote || "").trim();
+  const paymentMethod = String(req.body.paymentMethod || "").trim();
+  if (!paymentReference) return res.status(400).json({ error: "Payment reference is required" });
+  if (type === "deposit" && !req.file) return res.status(400).json({ error: "Payment receipt or screenshot is required" });
   const db = readDb();
   const user = db.users.find((item) => item.id === req.user.id);
   if (!user || user.status !== "active") return res.status(403).json({ error: "Account unavailable" });
@@ -468,8 +502,20 @@ app.post("/api/wallet/request", auth, (req, res) => {
     type,
     amount,
     status: "pending",
+    paymentMethod,
+    paymentReference,
+    paymentNote,
+    proofFile: req.file ? req.file.filename : "",
     createdAt: new Date().toISOString(),
   });
+  addNotification(
+    db,
+    user.id,
+    type,
+    `${type === "deposit" ? "Deposit" : "Withdrawal"} request submitted`,
+    `Rs. ${amount.toLocaleString("en-US")} is pending administrator review.`,
+    db.transactions[0].id,
+  );
   writeDb(db);
   res.status(201).json({ message: `${type === "deposit" ? "Deposit" : "Withdrawal"} request submitted`, balance: user.balance });
 });
@@ -480,6 +526,27 @@ app.get("/api/wallet/transactions", auth, (req, res) => {
     .filter((item) => item.userId === req.user.id)
     .slice(0, 100);
   res.json({ transactions });
+});
+
+app.get("/api/inbox", auth, (req, res) => {
+  const db = readDb();
+  const notifications = (db.notifications || [])
+    .filter((item) => item.userId === req.user.id)
+    .slice(0, 100);
+  res.json({
+    notifications,
+    unreadCount: notifications.filter((item) => !item.read).length,
+  });
+});
+
+app.patch("/api/inbox/read", auth, (req, res) => {
+  const db = readDb();
+  db.notifications ||= [];
+  for (const item of db.notifications) {
+    if (item.userId === req.user.id) item.read = true;
+  }
+  writeDb(db);
+  res.json({ unreadCount: 0 });
 });
 
 app.get("/api/admin/stats", auth, admin, (req, res) => {
@@ -529,6 +596,16 @@ app.patch("/api/admin/users/:id/kyc", auth, admin, (req, res) => {
   user.kycStatus = req.body.status;
   user.kycReviewedAt = new Date().toISOString();
   user.kycReviewNote = String(req.body.note || "");
+  db.notifications ||= [];
+  addNotification(
+    db,
+    user.id,
+    "kyc",
+    req.body.status === "verified" ? "KYC verification approved" : "KYC verification rejected",
+    req.body.status === "verified"
+      ? "Your identity verification has been approved."
+      : `Your identity verification was rejected${req.body.note ? `: ${String(req.body.note).trim()}` : "."}`,
+  );
   writeDb(db);
   res.json({ user: publicUser(user) });
 });
@@ -549,8 +626,59 @@ app.patch("/api/admin/transactions/:id", auth, admin, (req, res) => {
     user.balance = Number((user.balance + (transaction.type === "deposit" ? transaction.amount : -transaction.amount)).toFixed(2));
     if (user.balance < 0) user.balance = 0;
   }
+  if (user) {
+    addNotification(
+      db,
+      user.id,
+      transaction.type,
+      `${transaction.type === "deposit" ? "Deposit" : "Withdrawal"} ${req.body.status}`,
+      req.body.status === "approved"
+        ? `Rs. ${Number(transaction.amount).toLocaleString("en-US")} was ${transaction.type === "deposit" ? "added to" : "deducted from"} your wallet.`
+        : `Your Rs. ${Number(transaction.amount).toLocaleString("en-US")} ${transaction.type} request was rejected.`,
+      transaction.id,
+    );
+  }
   writeDb(db);
   res.json({ transaction, balance: user ? user.balance : 0 });
+});
+
+app.post("/api/admin/game-results", auth, admin, (req, res) => {
+  const { userId, category, gameName, outcome, amount, reference } = req.body;
+  if (!["bet", "lottery", "game"].includes(category)) return res.status(400).json({ error: "Invalid result category" });
+  if (!["won", "lost"].includes(outcome)) return res.status(400).json({ error: "Invalid game outcome" });
+  const winnings = Number(amount);
+  if (!Number.isFinite(winnings) || winnings < 0) return res.status(400).json({ error: "Invalid winnings amount" });
+  const db = readDb();
+  const user = db.users.find((item) => item.id === userId && item.role !== "admin");
+  if (!user) return res.status(404).json({ error: "User not found" });
+  if (outcome === "won" && winnings > 0) {
+    user.balance = Number((user.balance + winnings).toFixed(2));
+  }
+  const eventId = String(reference || randomUUID()).trim();
+  db.transactions.unshift({
+    id: eventId,
+    userId: user.id,
+    username: user.username,
+    type: category,
+    amount: outcome === "won" ? winnings : 0,
+    status: outcome === "won" ? "won" : "lost",
+    gameName: String(gameName || category),
+    createdAt: new Date().toISOString(),
+  });
+  addNotification(
+    db,
+    user.id,
+    category,
+    outcome === "won"
+      ? `${category === "lottery" ? "Lottery win" : category === "bet" ? "Bet win" : "Game win"}: ${String(gameName || "")}`
+      : `${category === "lottery" ? "Lottery result" : category === "bet" ? "Bet result" : "Game result"}`,
+    outcome === "won"
+      ? `You won Rs. ${winnings.toLocaleString("en-US")} and the amount has been added to your wallet.`
+      : `Your ${category === "lottery" ? "lottery" : category === "bet" ? "bet" : "game"} result was recorded as no win.`,
+    eventId,
+  );
+  writeDb(db);
+  res.status(201).json({ message: "Game result recorded", user: publicUser(user) });
 });
 
 await seedAdmin();
