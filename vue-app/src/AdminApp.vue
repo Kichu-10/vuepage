@@ -182,17 +182,12 @@
       <p v-if="supportTickets.length === 0" class="empty">No support requests</p>
     </section>
 
-    <section v-if="tab === 'settings'" class="panel settings-panel">
-      <div class="panel-heading"><div><h2>Platform Settings</h2><p>Public announcement, support, and member offers</p></div></div>
+    <section v-if="tab === 'promotions'" class="panel settings-panel">
+      <div class="panel-heading"><div><h2>Member Promotions</h2><p>Create and control the offers displayed to signed-in members.</p></div></div>
       <form class="settings-form" @submit.prevent="savePlatformSettings">
-        <label>Public announcement<textarea v-model="platformSettings.announcement" rows="3" placeholder="Announcement shown on the homepage"></textarea></label>
-        <label>Support email<input v-model="platformSettings.supportEmail" type="email" placeholder="support@example.com" /></label>
-        <label>Support phone<input v-model="platformSettings.supportPhone" placeholder="+91..." /></label>
-        <label>Support hours<input v-model="platformSettings.supportHours" placeholder="24/7" /></label>
-        <label class="switch-row"><span><strong>Maintenance mode</strong><small>Display maintenance notice without disabling the API</small></span><input v-model="platformSettings.maintenanceMode" type="checkbox" /></label>
         <section class="promotion-admin-section">
           <div class="promotion-admin-heading">
-            <div><h3>Member promotions</h3><p>Only active offers are visible to signed-in users. State eligibility and terms clearly.</p></div>
+            <div><h3>Offers</h3><p>Only active offers are visible to signed-in users. Include eligibility, restrictions, and expiry in the terms.</p></div>
             <button type="button" class="secondary" :disabled="platformSettings.promotions.length >= 20" @click="addPromotion">Add offer</button>
           </div>
           <article v-for="(promotion, index) in platformSettings.promotions" :key="promotion.id" class="promotion-admin-card">
@@ -204,10 +199,29 @@
             <label>Description<textarea v-model="promotion.description" maxlength="500" rows="2" placeholder="Describe the offer"></textarea></label>
             <label>Reward description<input v-model="promotion.reward" maxlength="160" placeholder="Describe reward (avoid guarantees)" /></label>
             <label>Eligibility and terms<textarea v-model="promotion.terms" maxlength="1000" rows="3" placeholder="Eligibility, restrictions, expiry, and how to ask about the offer"></textarea></label>
+            <label class="promotion-banner-upload">Banner artwork (JPEG, PNG, or WebP; up to 5 MB)
+              <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="bannerUploading[promotion.id]" @change="uploadPromotionBanner(promotion, $event)" />
+              <small v-if="bannerUploading[promotion.id]">Uploading banner...</small>
+              <img v-if="bannerPreview(promotion)" :src="bannerPreview(promotion)" :alt="`${promotion.title || 'Promotion'} banner preview`" />
+            </label>
+            <label class="switch-row"><span><strong>Image contains complete offer design</strong><small>Use for a finished banner with text and button already included</small></span><input v-model="promotion.bannerIncludesText" type="checkbox" /></label>
             <label class="switch-row"><span><strong>Offer active</strong><small>Show this offer to signed-in users</small></span><input v-model="promotion.active" type="checkbox" /></label>
           </article>
           <p v-if="platformSettings.promotions.length === 0" class="empty">No offers configured. Add an offer to show it to members.</p>
         </section>
+        <button class="primary-button" type="submit">Save promotions</button>
+      </form>
+      <small class="form-message" role="status">{{ settingsMessage }}</small>
+    </section>
+
+    <section v-if="tab === 'settings'" class="panel settings-panel">
+      <div class="panel-heading"><div><h2>Platform Settings</h2><p>Public announcement, support, and member offers</p></div></div>
+      <form class="settings-form" @submit.prevent="savePlatformSettings">
+        <label>Public announcement<textarea v-model="platformSettings.announcement" rows="3" placeholder="Announcement shown on the homepage"></textarea></label>
+        <label>Support email<input v-model="platformSettings.supportEmail" type="email" placeholder="support@example.com" /></label>
+        <label>Support phone<input v-model="platformSettings.supportPhone" placeholder="+91..." /></label>
+        <label>Support hours<input v-model="platformSettings.supportHours" placeholder="24/7" /></label>
+        <label class="switch-row"><span><strong>Maintenance mode</strong><small>Display maintenance notice without disabling the API</small></span><input v-model="platformSettings.maintenanceMode" type="checkbox" /></label>
         <button class="primary-button" type="submit">Save platform settings</button>
       </form>
       <small class="form-message" role="status">{{ settingsMessage }}</small>
@@ -229,7 +243,7 @@ type Account = {
 type Transaction = { id: string; username: string; type: string; amount: number; status: string; paymentMethod?: string; paymentReference?: string; paymentNote?: string; proofFile?: string };
 type AuditLog = { id: string; action: string; target: string; details: string; createdAt: string };
 type SupportTicket = { id: string; username: string; subject: string; message: string; status: string; reply: string; createdAt: string; updatedAt: string };
-type Promotion = { id: string; title: string; description: string; reward: string; terms: string; active: boolean };
+type Promotion = { id: string; title: string; description: string; reward: string; terms: string; active: boolean; bannerImage: string; bannerIncludesText: boolean };
 
 const session = useSessionStore();
 const token = toRef(session, "adminToken");
@@ -238,7 +252,7 @@ const username = ref("");
 const password = ref("");
 const loading = ref(false);
 const error = ref("");
-const tab = ref<"overview" | "users" | "kyc" | "transactions" | "results" | "activity" | "support" | "settings">("overview");
+const tab = ref<"overview" | "users" | "kyc" | "transactions" | "results" | "activity" | "support" | "promotions" | "settings">("overview");
 const stats = ref({ totalUsers: 0, activeUsers: 0, totalBalance: 0, pendingRequests: 0, indiaUsers: 0, pakistanUsers: 0, pendingKyc: 0, approvedDeposits: 0, approvedWithdrawals: 0 });
 const users = ref<Account[]>([]);
 const transactions = ref<Transaction[]>([]);
@@ -261,6 +275,8 @@ const supportTickets = ref<SupportTicket[]>([]);
 const openTicketCount = computed(() => supportTickets.value.filter((ticket) => ticket.status !== "resolved").length);
 const platformSettings = ref({ announcement: "", maintenanceMode: false, supportEmail: "", supportPhone: "", supportHours: "24/7", promotions: [] as Promotion[] });
 const settingsMessage = ref("");
+const bannerUploading = ref<Record<string, boolean>>({});
+const bannerPreviewUrls = ref<Record<string, string>>({});
 let refreshTimer: number | undefined;
 const kycUsers = computed(() => users.value.filter((account) => account.kycStatus !== "not_submitted"));
 const filteredUsers = computed(() => {
@@ -288,11 +304,12 @@ const pageTitle = computed(() => ({
   results: "Game Results",
   activity: "Administrator Activity",
   support: "Support Inbox",
+  promotions: "Member Promotions",
   settings: "Platform Settings",
 }[tab.value]));
 
 function selectTab(value: string) {
-  const allowedTabs = ["overview", "users", "kyc", "transactions", "results", "activity", "support", "settings"] as const;
+  const allowedTabs = ["overview", "users", "kyc", "transactions", "results", "activity", "support", "promotions", "settings"] as const;
   if (allowedTabs.includes(value as (typeof allowedTabs)[number])) {
     tab.value = value as (typeof allowedTabs)[number];
   }
@@ -306,12 +323,66 @@ function addPromotion() {
     description: "",
     reward: "",
     terms: "",
+    bannerImage: "",
+    bannerIncludesText: false,
     active: true,
   });
 }
 
 function removePromotion(index: number) {
-  platformSettings.value.promotions.splice(index, 1);
+  const [removed] = platformSettings.value.promotions.splice(index, 1);
+  if (removed) clearBannerPreview(removed.id);
+}
+
+function bannerPreview(promotion: Promotion): string {
+  return bannerPreviewUrls.value[promotion.id]
+    || (promotion.bannerImage ? `/api/promotions/${encodeURIComponent(promotion.id)}/banner` : "");
+}
+
+function clearBannerPreview(promotionId: string): void {
+  const preview = bannerPreviewUrls.value[promotionId];
+  if (preview?.startsWith("blob:")) URL.revokeObjectURL(preview);
+  delete bannerPreviewUrls.value[promotionId];
+}
+
+async function uploadPromotionBanner(promotion: Promotion, event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  bannerUploading.value[promotion.id] = true;
+  settingsMessage.value = "";
+  const form = new FormData();
+  form.append("banner", file);
+  try {
+    if (!promotion.title.trim()) throw new Error("Enter an offer title before uploading its banner.");
+    const saved = await api("/api/admin/settings", {
+      method: "PATCH",
+      body: JSON.stringify(platformSettings.value),
+    });
+    platformSettings.value = { ...platformSettings.value, ...saved.settings };
+    const savedPromotion = platformSettings.value.promotions.find((item) => item.id === promotion.id);
+    if (!savedPromotion) {
+      throw new Error("Save this offer before uploading its banner.");
+    }
+    const headers = new Headers();
+    if (token.value) headers.set("Authorization", `Bearer ${token.value}`);
+    const response = await fetch(`/api/admin/promotions/${encodeURIComponent(promotion.id)}/banner`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not upload promotion banner");
+    clearBannerPreview(promotion.id);
+    savedPromotion.bannerImage = data.promotion.bannerImage;
+    bannerPreviewUrls.value[promotion.id] = URL.createObjectURL(file);
+    settingsMessage.value = "Banner uploaded. Save promotions to publish the offer.";
+  } catch (caught) {
+    settingsMessage.value = caught instanceof Error ? caught.message : "Could not upload promotion banner";
+  } finally {
+    bannerUploading.value[promotion.id] = false;
+  }
 }
 
 async function api(path: string, options: RequestInit = {}) {
@@ -529,6 +600,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (refreshTimer) window.clearInterval(refreshTimer);
+  for (const preview of Object.values(bannerPreviewUrls.value)) {
+    if (preview.startsWith("blob:")) URL.revokeObjectURL(preview);
+  }
 });
 </script>
 
@@ -705,6 +779,8 @@ body { margin: 0; }
 .promotion-admin-card input, .promotion-admin-card textarea { width: 100%; padding: 9px; border: 1px solid #e1e8e4; border-radius: 8px; background: white; font: inherit; }
 .promotion-admin-card input { min-height: 38px; }
 .promotion-admin-card textarea { resize: vertical; }
+.promotion-admin-card .promotion-banner-upload { grid-column: 1 / -1; }
+.promotion-banner-upload img { width: min(100%, 520px); max-height: 220px; border-radius: 10px; object-fit: cover; }
 .promotion-admin-card .switch-row { flex-direction: row; }
 .google-config-note { margin: 12px 0 0; color: #77847c; font-size: 11px; line-height: 1.6; }
 .google-config-note code { overflow-wrap: anywhere; }
@@ -769,7 +845,7 @@ body { margin: 0; }
   .settings-form label, .settings-form label:first-child, .settings-form .switch-row, .settings-form .primary-button { grid-column: 1; }
   .promotion-admin-section { grid-column: 1; }
   .promotion-admin-card { grid-template-columns: 1fr; }
-  .promotion-admin-card-heading, .promotion-admin-card label:first-of-type, .promotion-admin-card label:nth-of-type(4), .promotion-admin-card .switch-row { grid-column: 1; }
+  .promotion-admin-card-heading, .promotion-admin-card label:first-of-type, .promotion-admin-card label:nth-of-type(4), .promotion-admin-card .promotion-banner-upload, .promotion-admin-card .switch-row { grid-column: 1; }
   .quick-actions button { flex: 1; min-width: 120px; }
 }
 @media (max-width: 420px) {

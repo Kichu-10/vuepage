@@ -12,6 +12,7 @@
       <button :class="{ active: tab === 'results' }" @click="$emit('select', 'results')"><span>★</span>Game Results</button>
       <button :class="{ active: tab === 'activity' }" @click="$emit('select', 'activity')"><span>◷</span>Activity</button>
       <button :class="{ active: tab === 'support' }" @click="$emit('select', 'support')"><span>?</span>Support <b v-if="openTicketCount">{{ openTicketCount }}</b></button>
+      <button :class="{ active: tab === 'promotions' }" @click="$emit('select', 'promotions')"><span>◆</span>Promotions</button>
       <button :class="{ active: tab === 'settings' }" @click="$emit('select', 'settings')"><span>⚙</span>Settings</button>
     </nav>
     <div class="sidebar-user">

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 export class GameProviderError extends Error {
@@ -11,38 +11,50 @@ export class GameProviderError extends Error {
 }
 
 function config() {
-  const { GAME_API_BASE_URL, GAME_OPERATOR_ID, GAME_SECRET, GAME_SALT } = process.env;
-  if (!GAME_API_BASE_URL || !GAME_OPERATOR_ID || !GAME_SECRET || !GAME_SALT) {
-    throw new GameProviderError("Game provider is not configured", 503);
+  const { HUIDU_SERVER_URL, HUIDU_AGENCY_UID, HUIDU_AES_KEY, HUIDU_PLAYER_PREFIX } = process.env;
+  if (!HUIDU_SERVER_URL || !HUIDU_AGENCY_UID || !HUIDU_AES_KEY || !HUIDU_PLAYER_PREFIX) {
+    throw new GameProviderError("HUIDU game provider is not configured", 503);
   }
+
   let baseUrl;
   try {
-    baseUrl = new URL(GAME_API_BASE_URL);
+    baseUrl = new URL(HUIDU_SERVER_URL);
   } catch {
-    throw new GameProviderError("Game provider API URL is invalid", 503);
+    throw new GameProviderError("HUIDU server URL is invalid", 503);
   }
-  if (baseUrl.protocol !== "https:") {
-    throw new GameProviderError("Game provider API must use HTTPS", 503);
+  if (baseUrl.protocol !== "https:" || baseUrl.username || baseUrl.password || baseUrl.search || baseUrl.hash) {
+    throw new GameProviderError("HUIDU server URL must be a clean HTTPS base URL", 503);
   }
+  if (Buffer.byteLength(HUIDU_AES_KEY, "utf8") !== 32) {
+    throw new GameProviderError("HUIDU AES key must be exactly 32 UTF-8 bytes", 503);
+  }
+  if (!/^[a-zA-Z0-9]{2,8}$/.test(HUIDU_PLAYER_PREFIX)) {
+    throw new GameProviderError("HUIDU player prefix must contain 2–8 letters or numbers", 503);
+  }
+
   return {
     baseUrl: baseUrl.toString().replace(/\/+$/, ""),
-    operatorId: GAME_OPERATOR_ID,
-    secret: GAME_SECRET,
-    salt: GAME_SALT,
+    agencyUid: HUIDU_AGENCY_UID,
+    aesKey: Buffer.from(HUIDU_AES_KEY, "utf8"),
+    playerPrefix: HUIDU_PLAYER_PREFIX,
   };
 }
 
-function canonicalParameters(parameters, secret, salt) {
-  const fields = Object.entries(parameters)
-    .filter(([key, value]) => key !== "hash" && value !== undefined && value !== null && String(value) !== "")
-    .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
-    .map(([key, value]) => `${key}=${String(value)}`);
-  fields.push(`secret=${secret}`, `salt=${salt}`);
-  return fields.join("&");
+export function encryptHuiduPayload(plaintext, aesKey) {
+  const key = Buffer.isBuffer(aesKey) ? aesKey : Buffer.from(aesKey, "utf8");
+  if (key.length !== 32) throw new TypeError("HUIDU AES key must be exactly 32 bytes");
+  const cipher = createCipheriv("aes-256-ecb", key, null);
+  return Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]).toString("base64");
 }
 
-export function signGameProviderParameters(parameters, secret, salt) {
-  return createHash("md5").update(canonicalParameters(parameters, secret, salt)).digest("hex");
+export function decryptHuiduPayload(ciphertext, aesKey) {
+  const key = Buffer.isBuffer(aesKey) ? aesKey : Buffer.from(aesKey, "utf8");
+  if (key.length !== 32) throw new TypeError("HUIDU AES key must be exactly 32 bytes");
+  const decipher = createDecipheriv("aes-256-ecb", key, null);
+  return Buffer.concat([
+    decipher.update(Buffer.from(ciphertext, "base64")),
+    decipher.final(),
+  ]).toString("utf8");
 }
 
 export function currencyForCountry(country) {
@@ -55,143 +67,242 @@ export function currencyForCountry(country) {
   return currency;
 }
 
-async function providerRequest(path, parameters) {
+export function huiduPlayerPrefix() {
+  return config().playerPrefix;
+}
+
+async function readJsonResponse(response) {
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    throw new GameProviderError("HUIDU returned an invalid response");
+  }
+  if (!response.ok) {
+    const code = Number.isInteger(Number(result?.code)) ? Number(result.code) : undefined;
+    throw new GameProviderError(typeof result?.msg === "string" && result.msg ? result.msg : "HUIDU rejected the request", 502, code);
+  }
+  if (!result || Number(result.code) !== 0) {
+    const code = Number.isInteger(Number(result?.code)) ? Number(result.code) : undefined;
+    throw new GameProviderError(typeof result?.msg === "string" && result.msg ? result.msg : "HUIDU rejected the request", 502, code);
+  }
+  return result;
+}
+
+async function providerGet(path, parameters) {
   const current = config();
-  const body = { ...parameters, operatorId: current.operatorId };
-  body.hash = signGameProviderParameters(body, current.secret, current.salt);
+  const url = new URL(`${current.baseUrl}${path}`);
+  for (const [key, value] of Object.entries(parameters)) {
+    if (value !== undefined && value !== null && String(value) !== "") url.searchParams.set(key, String(value));
+  }
+
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    throw new GameProviderError("Could not reach HUIDU");
+  }
+  return readJsonResponse(response);
+}
+
+function parseEncryptedPayload(value, aesKey) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value) throw new GameProviderError("HUIDU returned an invalid payload");
+
+  for (const candidate of [value, (() => {
+    try {
+      return decryptHuiduPayload(value, aesKey);
+    } catch {
+      return "";
+    }
+  })()]) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    } catch {
+      // Try the other documented payload representation.
+    }
+  }
+  throw new GameProviderError("HUIDU returned an invalid payload");
+}
+
+async function providerPost(path, parameters) {
+  const current = config();
+  const timestamp = Date.now();
+  const responseBody = {
+    agency_uid: current.agencyUid,
+    timestamp: String(timestamp),
+    payload: encryptHuiduPayload(JSON.stringify({
+      ...parameters,
+      agency_uid: current.agencyUid,
+      timestamp,
+    }), current.aesKey),
+  };
 
   let response;
   try {
     response = await fetch(`${current.baseUrl}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(responseBody),
       signal: AbortSignal.timeout(10_000),
     });
   } catch {
-    throw new GameProviderError("Could not reach the game provider");
+    throw new GameProviderError("Could not reach HUIDU");
   }
 
-  let result;
-  try {
-    result = await response.json();
-  } catch {
-    throw new GameProviderError("Game provider returned an invalid response");
-  }
-  const code = Number(result?.error);
-  if (!response.ok || !result || code !== 0) {
-    const definitiveCode = response.ok && Number.isInteger(code) && code !== 0 ? code : undefined;
-    throw new GameProviderError(
-      typeof result?.message === "string" ? result.message :
-        typeof result?.description === "string" ? result.description : "Game provider rejected the request",
-      502,
-      definitiveCode,
-    );
-  }
-  return result.data;
+  const result = await readJsonResponse(response);
+  return parseEncryptedPayload(result.payload, current.aesKey);
 }
 
+const providerSchema = z.object({
+  code: z.string().trim().min(1).max(80),
+  name: z.string().trim().min(1).max(120).optional(),
+  status: z.coerce.number().int().optional(),
+});
 const providerGameSchema = z.object({
-  gameId: z.coerce.number().int().positive(),
-  name: z.union([z.string(), z.object({ en: z.string().optional() })]),
-  provider: z.string().trim().min(1).max(40),
-  status: z.coerce.number().int().min(0).max(2),
+  game_uid: z.union([z.string(), z.number()]).transform(String).pipe(z.string().trim().min(1).max(120)),
+  game_name: z.string().trim().min(1).max(160),
+  game_type: z.string().trim().max(80).optional().default(""),
+  status: z.coerce.number().int(),
 });
 
-export async function listProviderGames() {
-  const data = await providerRequest("/gi/v2/getGameList", { traceId: randomUUID() });
-  if (!Array.isArray(data)) throw new GameProviderError("Game provider returned an invalid game list");
-  return data.map((item) => {
+async function listGamesForProvider(provider) {
+  const result = await providerGet("/game/list", {
+    agency_uid: config().agencyUid,
+    lang: "en",
+    code: provider.code,
+  });
+  if (!Array.isArray(result.data)) throw new GameProviderError("HUIDU returned an invalid game list");
+
+  return result.data.map((item) => {
     const parsed = providerGameSchema.safeParse(item);
-    if (!parsed.success) throw new GameProviderError("Game provider returned an invalid game entry");
-    const name = typeof parsed.data.name === "string" ? parsed.data.name : parsed.data.name.en;
-    if (!name?.trim()) throw new GameProviderError("Game provider returned a game without an English name");
+    if (!parsed.success) throw new GameProviderError("HUIDU returned an invalid game entry");
     return {
-      id: parsed.data.gameId,
-      name: name.trim(),
-      provider: parsed.data.provider,
-      status: parsed.data.status,
+      id: parsed.data.game_uid,
+      name: parsed.data.game_name,
+      provider: provider.name || provider.code,
+      providerCode: provider.code,
+      gameType: parsed.data.game_type,
+      status: parsed.data.status === 1 ? 0 : 2,
     };
   });
 }
 
-export async function createProviderPlayer({ playerId, currency }) {
-  try {
-    await providerRequest("/gi/v2/player/create", {
-      traceId: randomUUID(),
-      playerId,
-      currency,
+let gamesCache;
+let gamesCacheExpiresAt = 0;
+let pendingCatalog;
+
+async function loadProviderGames() {
+  const current = config();
+  const result = await providerGet("/game/providers", {
+    agency_uid: current.agencyUid,
+    lang: "en",
+  });
+  if (!Array.isArray(result.data)) throw new GameProviderError("HUIDU returned an invalid provider list");
+  const providers = result.data.map((provider) => {
+    const parsed = providerSchema.safeParse(provider);
+    if (!parsed.success) throw new GameProviderError("HUIDU returned an invalid provider entry");
+    return parsed.data;
+  }).filter((provider) => provider.status === undefined || provider.status === 1);
+
+  const games = [];
+  for (let index = 0; index < providers.length; index += 4) {
+    const batch = await Promise.all(providers.slice(index, index + 4).map(listGamesForProvider));
+    games.push(...batch.flat());
+  }
+  return games;
+}
+
+export async function listProviderGames() {
+  if (gamesCache && gamesCacheExpiresAt > Date.now()) return gamesCache;
+  if (!pendingCatalog) {
+    pendingCatalog = loadProviderGames().then((games) => {
+      gamesCache = games;
+      gamesCacheExpiresAt = Date.now() + 60_000;
+      return games;
+    }).finally(() => {
+      pendingCatalog = undefined;
     });
-  } catch (error) {
-    if (!(error instanceof GameProviderError) || error.code !== 1017) throw error;
   }
+  return pendingCatalog;
 }
 
-export async function getProviderGameWalletBalance(playerId) {
-  const data = await providerRequest("/gi/v2/getBalance", {
-    traceId: randomUUID(),
-    playerIds: playerId,
-  });
-  const balances = Array.isArray(data) ? data : data ? [data] : [];
-  const entry = balances.find((item) => item?.playerId === playerId);
-  if (!entry || !/^\d+(?:\.\d{1,2})?$/.test(String(entry.balance))) {
-    throw new GameProviderError("Game provider returned an invalid player balance");
+function amountCents(value, label) {
+  if (!/^\d+(?:\.\d{1,2})?$/.test(String(value))) {
+    throw new GameProviderError(`HUIDU returned an invalid ${label}`);
   }
-  return {
-    currency: typeof entry.currency === "string" ? entry.currency : "",
-    balance: Number(entry.balance),
-  };
+  const cents = Math.round(Number(value) * 100);
+  if (!Number.isSafeInteger(cents)) throw new GameProviderError(`HUIDU returned an invalid ${label}`);
+  return cents;
 }
 
-export async function transferFundsToProvider({ transactionId, playerId, amount }) {
-  const data = await providerRequest("/gi/v2/transferIn", {
-    traceId: randomUUID(),
-    transactionId,
-    playerId,
-    amount: amount.toFixed(2),
-  });
-  return parseTransferResponse(data, transactionId);
-}
-
-export async function transferFundsFromProvider({ transactionId, playerId }) {
-  const data = await providerRequest("/gi/v2/transferOut", {
-    traceId: randomUUID(),
-    transactionId,
-    playerId,
-    amount: "0.01",
-    transferAll: 1,
-  });
-  return parseTransferResponse(data, transactionId);
-}
-
-function parseTransferResponse(data, transactionId) {
-  if (!data || (data.transactionId && data.transactionId !== transactionId) ||
-      !/^\d+(?:\.\d{1,2})?$/.test(String(data.amount)) ||
-      !/^\d+(?:\.\d{1,2})?$/.test(String(data.balance))) {
-    throw new GameProviderError("Game provider returned an invalid transfer response");
+function validateTransferResult(payload, requestedCents) {
+  const transferStatus = payload.transfer_status === undefined ? undefined : Number(payload.transfer_status);
+  if (transferStatus !== undefined && transferStatus !== 1) {
+    throw new GameProviderError("HUIDU could not complete the wallet transfer", 502, transferStatus);
   }
-  const amount = Number(data.amount);
-  if (!Number.isSafeInteger(Math.round(amount * 100)) || amount <= 0) {
-    throw new GameProviderError("Game provider returned an invalid transfer amount");
+  const balanceValue = payload.after_amount ?? payload.credit_amount;
+  const balanceCents = amountCents(balanceValue, "player balance");
+  if (requestedCents !== 0 && payload.transfer_amount !== undefined) {
+    const transferredCents = amountCents(String(payload.transfer_amount).replace(/^-/, ""), "transfer amount");
+    if (transferredCents !== Math.abs(requestedCents)) {
+      throw new GameProviderError("HUIDU returned a mismatched transfer amount");
+    }
   }
-  return {
-    amountCents: Math.round(amount * 100),
-    balanceCents: Math.round(Number(data.balance) * 100),
-  };
+  return { amountCents: Math.abs(requestedCents), balanceCents };
 }
 
-export async function launchTransferWalletGame({ gameId, playerId }) {
-  const data = await providerRequest("/gi/v2/loginGame", {
-    traceId: randomUUID(),
-    playerId,
-    gameId,
+async function gameWalletRequest({ playerId, currency, gameId, amountCents, transferId, platform }) {
+  if (!Number.isSafeInteger(amountCents)) throw new TypeError("Game transfer amount must be a safe integer");
+  const payload = await providerPost("/game/v2", {
+    member_account: playerId,
+    ...(gameId ? { game_uid: gameId } : {}),
+    credit_amount: (amountCents / 100).toFixed(2),
+    currency_code: currency,
     language: "en",
+    ...(platform === undefined ? {} : { platform }),
+    transfer_id: transferId,
   });
-  const gameUrl = typeof data?.gameUrl === "string" ? data.gameUrl : "";
-  try {
-    if (new URL(gameUrl).protocol !== "https:") throw new Error("Invalid URL protocol");
-  } catch {
-    throw new GameProviderError("Game provider returned an invalid launch URL");
+  const transfer = validateTransferResult(payload, amountCents);
+  let gameUrl;
+  if (gameId) {
+    try {
+      const url = new URL(payload.game_launch_url);
+      if (url.protocol !== "https:") throw new Error("Invalid URL protocol");
+      gameUrl = url.toString();
+    } catch {
+      throw new GameProviderError("HUIDU returned an invalid game launch URL");
+    }
   }
-  return gameUrl;
+  return { ...transfer, gameUrl };
+}
+
+export async function getProviderGameWalletBalance(playerId, currency) {
+  const result = await gameWalletRequest({
+    playerId,
+    currency,
+    amountCents: 0,
+    transferId: randomUUID(),
+  });
+  return { currency, balance: result.balanceCents / 100 };
+}
+
+export async function launchTransferWalletGame({ gameId, playerId, currency, amountCents, transferId, platform }) {
+  return gameWalletRequest({ gameId, playerId, currency, amountCents, transferId, platform });
+}
+
+export async function transferFundsFromProvider({ transactionId, playerId, currency, amountCents }) {
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
+    throw new TypeError("Game wallet return amount must be positive");
+  }
+  return gameWalletRequest({
+    playerId,
+    currency,
+    amountCents: -amountCents,
+    transferId: transactionId,
+  });
 }

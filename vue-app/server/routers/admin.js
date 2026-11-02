@@ -1,5 +1,8 @@
 import express from "express";
+import fs from "node:fs";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
+import multer from "multer";
 import { z } from "zod";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -26,6 +29,8 @@ const settingsSchema = z.object({
     description: z.string().trim().max(500).default(""),
     reward: z.string().trim().max(160).default(""),
     terms: z.string().trim().max(1000).default(""),
+    bannerImage: z.string().trim().max(100).regex(/^(|promotion-[a-f0-9-]+\.(jpg|png|webp))$/i).default(""),
+    bannerIncludesText: z.boolean().default(false),
     active: z.boolean().default(true),
   })).max(20).default([]),
 });
@@ -57,10 +62,79 @@ function publicUser(user) {
   return safeUser;
 }
 
-export function createAdminRouter() {
+function identifyPromotionImage(buffer) {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "jpg";
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "png";
+  if (buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") return "webp";
+  return "";
+}
+
+export function createAdminRouter(uploadDir) {
   const router = express.Router();
+  const promotionImageDir = path.join(uploadDir, "promotion-banners");
+  fs.mkdirSync(promotionImageDir, { recursive: true });
+  const uploadPromotionImage = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+    fileFilter: (_req, file, callback) => callback(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)),
+  });
   router.use((req, res, next) => req.path === "/auth/login" ? next() : authenticate(req, res, next));
   router.use((req, res, next) => req.path === "/auth/login" ? next() : requireAdmin(req, res, next));
+
+  router.get("/promotions/:id/banner", (req, res) => {
+    const promotion = (readDb().platformSettings?.promotions || []).find((item) => item.id === req.params.id);
+    if (!promotion?.bannerImage) return res.status(404).json({ error: "Promotion banner not found" });
+    const filename = path.basename(promotion.bannerImage);
+    const filePath = path.join(promotionImageDir, filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Promotion banner not found" });
+    res.setHeader("Cache-Control", "private, no-store");
+    res.type(path.extname(filename));
+    res.sendFile(filePath, { dotfiles: "deny" }, (error) => {
+      if (error && !res.headersSent) res.status(error.statusCode || 500).json({ error: "Could not load promotion banner" });
+    });
+  });
+
+  router.post("/promotions/:id/banner", (req, res, next) => {
+    uploadPromotionImage.single("banner")(req, res, (error) => {
+      if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ error: "Promotion banners must be 5 MB or smaller" });
+      }
+      if (error) return next(error);
+      next();
+    });
+  }, (req, res) => {
+    const db = readDb();
+    const promotion = (db.platformSettings?.promotions || []).find((item) => item.id === req.params.id);
+    if (!promotion) return res.status(404).json({ error: "Promotion not found" });
+    if (!req.file) return res.status(400).json({ error: "Upload a valid JPEG, PNG, or WebP banner image" });
+
+    const extension = identifyPromotionImage(req.file.buffer);
+    if (!extension) return res.status(400).json({ error: "The banner is not a valid JPEG, PNG, or WebP image" });
+
+    const previousImage = promotion.bannerImage;
+    promotion.bannerImage = `promotion-${randomUUID()}.${extension}`;
+    fs.writeFileSync(path.join(promotionImageDir, promotion.bannerImage), req.file.buffer, { flag: "wx" });
+    try {
+      const admin = db.users.find((item) => item.id === req.user.id);
+      addAudit(db, admin?.username || "admin", "PROMOTION_BANNER_UPLOADED", promotion.title || promotion.id, "Promotion banner artwork updated");
+      writeDb(db);
+    } catch (error) {
+      fs.rmSync(path.join(promotionImageDir, promotion.bannerImage), { force: true });
+      throw error;
+    }
+
+    if (previousImage && previousImage !== promotion.bannerImage) {
+      try {
+        fs.rmSync(path.join(promotionImageDir, path.basename(previousImage)), { force: true });
+      } catch (error) {
+        logger.warn("promotion_banner_cleanup_failed", {
+          promotionId: promotion.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    res.json({ promotion });
+  });
 
   router.get("/stats", (_req, res) => {
     const db = readDb();
@@ -83,10 +157,25 @@ export function createAdminRouter() {
   router.get("/settings", (_req, res) => res.json({ settings: readDb().platformSettings || {} }));
   router.patch("/settings", validate(settingsSchema), (req, res) => {
     const db = readDb();
+    const previousBannerImages = (db.platformSettings?.promotions || [])
+      .map((promotion) => promotion.bannerImage)
+      .filter(Boolean);
     db.platformSettings = req.body;
     const admin = db.users.find((item) => item.id === req.user.id);
     addAudit(db, admin?.username || "admin", "SETTINGS_UPDATED", "Platform settings", "Announcement, support, and promotion settings updated");
     writeDb(db);
+    const retainedBannerImages = new Set(db.platformSettings.promotions.map((promotion) => promotion.bannerImage).filter(Boolean));
+    for (const filename of previousBannerImages) {
+      if (retainedBannerImages.has(filename)) continue;
+      try {
+        fs.rmSync(path.join(promotionImageDir, path.basename(filename)), { force: true });
+      } catch (error) {
+        logger.warn("promotion_banner_cleanup_failed", {
+          filename: path.basename(filename),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     res.json({ settings: db.platformSettings });
   });
   router.get("/users", (_req, res) => res.json({ users: readDb().users.filter((item) => item.role !== "admin").map(publicUser) }));

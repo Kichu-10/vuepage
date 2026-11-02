@@ -15,14 +15,13 @@ import {
 } from "../database.js";
 import { logger } from "../config/logger.js";
 import {
-  createProviderPlayer,
   GameProviderError,
   currencyForCountry,
   getProviderGameWalletBalance,
+  huiduPlayerPrefix,
   launchTransferWalletGame,
   listProviderGames,
   transferFundsFromProvider,
-  transferFundsToProvider,
 } from "../services/game-provider.js";
 
 function providerFailure(res, error, fallback) {
@@ -33,13 +32,8 @@ function providerFailure(res, error, fallback) {
   return res.status(500).json({ error: fallback });
 }
 
-async function ensureProviderPlayer(userId, country) {
-  const player = ensureGamePlayer(userId, currencyForCountry(country));
-  if (!player.providerCreated) {
-    await createProviderPlayer(player);
-    markGamePlayerCreated(userId);
-  }
-  return { ...player, providerCreated: true };
+function ensureProviderPlayer(userId, country) {
+  return ensureGamePlayer(userId, currencyForCountry(country), huiduPlayerPrefix());
 }
 
 export function createGamesRouter() {
@@ -69,7 +63,7 @@ export function createGamesRouter() {
         if (!user) return res.status(403).json({ error: "Account unavailable" });
         return res.json({ currency: currencyForCountry(user.country), balance: 0 });
       }
-      const wallet = await getProviderGameWalletBalance(player.playerId);
+      const wallet = await getProviderGameWalletBalance(player.playerId, player.currency);
       res.json(wallet);
     } catch (error) {
       providerFailure(res, error, "Could not check the game wallet");
@@ -77,10 +71,12 @@ export function createGamesRouter() {
   });
 
   router.post("/:gameId/launch", authenticate, async (req, res) => {
-    const gameId = Number(req.params.gameId);
-    if (!Number.isSafeInteger(gameId) || gameId <= 0) {
+    const gameId = req.params.gameId;
+    if (!/^[a-zA-Z0-9_-]{1,120}$/.test(gameId)) {
       return res.status(400).json({ error: "Invalid game" });
     }
+    const platform = req.body?.platform === undefined ? 1 : Number(req.body.platform);
+    if (![1, 2].includes(platform)) return res.status(400).json({ error: "Invalid game platform" });
     let transfer;
     try {
       const user = readDb().users.find(
@@ -93,7 +89,7 @@ export function createGamesRouter() {
       if (!game) return res.status(404).json({ error: "Game not found" });
       if (game.status !== 0) return res.status(409).json({ error: "This game is currently unavailable" });
 
-      const player = await ensureProviderPlayer(user.id, user.country);
+      const player = ensureProviderPlayer(user.id, user.country);
       const pendingOut = findPendingGameWalletTransfer(user.id, "out");
       if (pendingOut) return res.status(409).json({ error: "A game balance return is pending. Retry returning funds first." });
 
@@ -114,16 +110,22 @@ export function createGamesRouter() {
 
       if (transfer) {
         try {
-          const result = await transferFundsToProvider({
-            transactionId: transfer.id,
+          const result = await launchTransferWalletGame({
+            gameId,
             playerId: player.playerId,
-            amount: transfer.amountCents / 100,
+            currency: player.currency,
+            amountCents: transfer.amountCents,
+            transferId: transfer.id,
+            platform,
           });
-          transfer = completeGameWalletTransfer({
+          completeGameWalletTransfer({
             id: transfer.id,
-            amountCents: result.amountCents,
+            amountCents: transfer.amountCents,
             providerBalanceCents: result.balanceCents,
-          }).transfer;
+          });
+          markGamePlayerCreated(user.id);
+          const currentUser = readDb().users.find((item) => item.id === user.id);
+          return res.json({ gameUrl: result.gameUrl, balance: currentUser?.balance ?? 0 });
         } catch (error) {
           if (error instanceof GameProviderError && error.code !== undefined) {
             failGameWalletTransfer(transfer.id);
@@ -132,9 +134,17 @@ export function createGamesRouter() {
         }
       }
 
-      const gameUrl = await launchTransferWalletGame({ gameId, playerId: player.playerId });
+      const result = await launchTransferWalletGame({
+        gameId,
+        playerId: player.playerId,
+        currency: player.currency,
+        amountCents: 0,
+        transferId: randomUUID(),
+        platform,
+      });
+      markGamePlayerCreated(user.id);
       const currentUser = readDb().users.find((item) => item.id === user.id);
-      res.json({ gameUrl, balance: currentUser?.balance ?? 0 });
+      res.json({ gameUrl: result.gameUrl, balance: currentUser?.balance ?? 0 });
     } catch (error) {
       if (error instanceof Error && error.message === "Game currency is already fixed for this account") {
         return res.status(409).json({ error: error.message });
@@ -166,13 +176,16 @@ export function createGamesRouter() {
       if (!transfer) {
         const pendingIn = findPendingGameWalletTransfer(user.id, "in");
         if (pendingIn) return res.status(409).json({ error: "A transfer to the game wallet is pending. Retry launching the game first." });
+        const wallet = await getProviderGameWalletBalance(player.playerId, player.currency);
+        const amountCents = toCents(wallet.balance);
+        if (amountCents <= 0) return res.status(409).json({ error: "There are no funds to return from the game wallet." });
         transfer = beginGameWalletTransfer({
           id: randomUUID(),
           userId: user.id,
           playerId: player.playerId,
           currency: player.currency,
           direction: "out",
-          amountCents: 0,
+          amountCents,
         });
       }
 
@@ -180,10 +193,12 @@ export function createGamesRouter() {
         const result = await transferFundsFromProvider({
           transactionId: transfer.id,
           playerId: player.playerId,
+          currency: player.currency,
+          amountCents: transfer.amountCents,
         });
         const completed = completeGameWalletTransfer({
           id: transfer.id,
-          amountCents: result.amountCents,
+          amountCents: transfer.amountCents,
           providerBalanceCents: result.balanceCents,
         });
         res.json({

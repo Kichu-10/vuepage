@@ -48,6 +48,16 @@ function publicUser(user) {
   return safe;
 }
 
+function googlePictureUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || !/(^|\.)googleusercontent\.com$/i.test(url.hostname)) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
 function hashOtp(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -184,6 +194,7 @@ export function createAuthRouter() {
       });
       const payload = ticket.getPayload();
       if (!payload?.email) return res.status(401).json({ error: "Google account email is unavailable" });
+      const pictureUrl = googlePictureUrl(payload.picture);
       const db = readDb();
       const email = payload.email.toLowerCase();
       let user = db.users.find((item) => item.email?.toLowerCase() === email);
@@ -193,13 +204,14 @@ export function createAuthRouter() {
           id: randomUUID(), username: uniqueUsername(db.users, email.split("@")[0]), phone: "", email,
           country: req.body.country, passwordHash: await bcrypt.hash(randomUUID(), 12), role: "user", balance: 0,
           status: "active", emailVerified: true, phoneVerified: false, kycStatus: "not_submitted",
-          kycDocuments: {}, googleId: payload.sub, createdAt: new Date().toISOString(),
+          kycDocuments: {}, googleId: payload.sub, googlePictureUrl: pictureUrl, createdAt: new Date().toISOString(),
           lastLoginAt: new Date().toISOString(),
         };
         db.users.push(user);
       }
       if (user.status !== "active") return res.status(403).json({ error: "This account is suspended" });
       user.googleId ||= payload.sub;
+      if (pictureUrl) user.googlePictureUrl = pictureUrl;
       user.emailVerified = true;
       if (!user.country && req.body.country) user.country = req.body.country;
       user.lastLoginAt = new Date().toISOString();

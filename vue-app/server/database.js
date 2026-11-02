@@ -25,7 +25,8 @@ db.exec(`
     kyc_status TEXT NOT NULL DEFAULT 'not_submitted', full_name TEXT NOT NULL DEFAULT '',
     date_of_birth TEXT NOT NULL DEFAULT '', document_type TEXT NOT NULL DEFAULT '',
     document_number TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '',
-    google_id TEXT NOT NULL DEFAULT '', avatar_path TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '',
+    google_id TEXT NOT NULL DEFAULT '', google_picture_url TEXT NOT NULL DEFAULT '',
+    avatar_path TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '',
     last_login_at TEXT, kyc_reviewed_at TEXT, kyc_review_note TEXT NOT NULL DEFAULT '',
     failed_admin_attempts INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0
   );
@@ -112,6 +113,9 @@ const userColumns = db.prepare("PRAGMA table_info(users)").all().map((column) =>
 if (!userColumns.includes("avatar_path")) {
   db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT NOT NULL DEFAULT '';");
 }
+if (!userColumns.includes("google_picture_url")) {
+  db.exec("ALTER TABLE users ADD COLUMN google_picture_url TEXT NOT NULL DEFAULT '';");
+}
 const platformSettingColumns = db.prepare("PRAGMA table_info(platform_settings)").all().map((column) => column.name);
 if (!platformSettingColumns.includes("promotions")) {
   db.exec("ALTER TABLE platform_settings ADD COLUMN promotions TEXT NOT NULL DEFAULT '[]';");
@@ -144,7 +148,8 @@ function rowUser(row) {
     emailVerified: Boolean(row.email_verified), phoneVerified: Boolean(row.phone_verified),
     kycStatus: row.kyc_status, fullName: row.full_name, dateOfBirth: row.date_of_birth,
     documentType: row.document_type, documentNumber: row.document_number, address: row.address,
-    googleId: row.google_id, avatarPath: row.avatar_path, createdAt: row.created_at, lastLoginAt: row.last_login_at,
+    googleId: row.google_id, googlePictureUrl: row.google_picture_url, avatarPath: row.avatar_path,
+    createdAt: row.created_at, lastLoginAt: row.last_login_at,
     kycReviewedAt: row.kyc_reviewed_at, kycReviewNote: row.kyc_review_note,
     failedAdminAttempts: row.failed_admin_attempts, lockedUntil: row.locked_until, kycDocuments: {},
   };
@@ -225,8 +230,8 @@ export function writeDb(source) {
     const insertUser = db.prepare(`
       INSERT INTO users (id, username, phone, email, country, password_hash, role, balance_cents, status,
         email_verified, phone_verified, kyc_status, full_name, date_of_birth, document_type, document_number,
-        address, google_id, avatar_path, created_at, last_login_at, kyc_reviewed_at, kyc_review_note, failed_admin_attempts, locked_until)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        address, google_id, google_picture_url, avatar_path, created_at, last_login_at, kyc_reviewed_at, kyc_review_note, failed_admin_attempts, locked_until)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertKycDocument = db.prepare("INSERT INTO kyc_documents (user_id, kind, file_path) VALUES (?, ?, ?)");
     for (const user of source.users || []) {
@@ -236,7 +241,8 @@ export function writeDb(source) {
         String(user.status || "active"), bool(user.emailVerified), bool(user.phoneVerified),
         String(user.kycStatus || "not_submitted"), String(user.fullName || ""), String(user.dateOfBirth || ""),
         String(user.documentType || ""), String(user.documentNumber || ""), String(user.address || ""),
-        String(user.googleId || ""), String(user.avatarPath || ""), String(user.createdAt || ""), user.lastLoginAt || null,
+        String(user.googleId || ""), String(user.googlePictureUrl || ""), String(user.avatarPath || ""),
+        String(user.createdAt || ""), user.lastLoginAt || null,
         user.kycReviewedAt || null, String(user.kycReviewNote || ""), Number(user.failedAdminAttempts || 0),
         Number(user.lockedUntil || 0),
       );
@@ -327,19 +333,24 @@ export function reservedWithdrawalCents(userId) {
   `).get(userId).total;
 }
 
-export function ensureGamePlayer(userId, currency) {
+export function ensureGamePlayer(userId, currency, playerPrefix = process.env.HUIDU_PLAYER_PREFIX || "b9") {
   const user = db.prepare("SELECT id, status FROM users WHERE id = ?").get(userId);
   if (!user || user.status !== "active") throw new Error("Account unavailable");
+  if (!/^[a-zA-Z0-9]{2,8}$/.test(playerPrefix)) throw new Error("HUIDU player prefix must contain 2–8 letters or numbers");
   const existing = db.prepare("SELECT player_id, currency, provider_created FROM game_players WHERE user_id = ?").get(userId);
   if (existing) {
     if (existing.currency !== currency) throw new Error("Game currency is already fixed for this account");
+    if (existing.player_id.length > 20 || !/^[a-zA-Z0-9]{3,20}$/.test(existing.player_id)) {
+      throw new Error("Existing game account name is incompatible with HUIDU; contact support before launching games");
+    }
     return {
       playerId: existing.player_id,
       currency: existing.currency,
       providerCreated: Boolean(existing.provider_created),
     };
   }
-  const playerId = `b9${createHash("sha256").update(userId).digest("hex").slice(0, 24)}`;
+  const suffixLength = 20 - playerPrefix.length;
+  const playerId = `${playerPrefix}${createHash("sha256").update(userId).digest("hex").slice(0, suffixLength)}`;
   db.prepare("INSERT INTO game_players (user_id, player_id, currency, provider_created, created_at) VALUES (?, ?, ?, 0, ?)")
     .run(userId, playerId, currency, new Date().toISOString());
   return { playerId, currency, providerCreated: false };

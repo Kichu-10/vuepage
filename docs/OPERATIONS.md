@@ -46,18 +46,19 @@ The API reads `.env.local` from `vue-app/`. `VITE_ADMIN_PANEL_PATH` configures t
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Optional email OTP delivery |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | Optional SMS OTP delivery |
 | `MANUAL_PAYMENT_*` | Manual deposit destination details shown to users |
-| `GAME_API_BASE_URL` | HTTPS base URL for the provider API |
-| `GAME_OPERATOR_ID` | Provider-assigned operator ID |
-| `GAME_SECRET`, `GAME_SALT` | Provider signing credentials; server-side only |
+| `HUIDU_SERVER_URL` | HUIDU HTTPS API base URL |
+| `HUIDU_AGENCY_UID` | HUIDU agency UID |
+| `HUIDU_AES_KEY` | HUIDU 32-byte AES key; server-side only |
+| `HUIDU_PLAYER_PREFIX` | 2–8 character prefix for new provider player IDs |
 | `GAME_CURRENCY_IN`, `GAME_CURRENCY_PK` | Provider currency codes for Indian and Pakistani accounts; default `INR` and `PKR` |
 
 Use long, unique secrets and restrict administrator access at the network layer for production. The sample values in `.env.example` are placeholders.
 
 To enable Google Sign-In, create a Google OAuth **Web application** client, set `GOOGLE_CLIENT_ID` to its client ID in `vue-app/.env.local`, and add each development/production site origin to the OAuth client's authorized JavaScript origins. Keep `GOOGLE_CLIENT_ID` the same for the API verifier and browser button; restart the API after changing it. The client ID is public configuration, not a secret. The OAuth flow currently asks the user to select India or Pakistan before continuing.
 
-Promotions are managed in the administrator's **Platform Settings**. Only active offers are returned to authenticated users; include eligibility and complete terms in each offer. The app does not automatically grant promotional credits.
+Promotions are managed in the administrator's **Promotions** section. Admins can add/edit offers, upload banner artwork, and activate or pause offers. Only active offer details are returned to authenticated users; banner images are public media. Include eligibility and complete terms in each offer. The app does not automatically grant promotional credits.
 
-See the [game provider setup guide](./GAME-PROVIDER-SETUP.md) for credential storage, local setup, rotation, and signature troubleshooting.
+See the [game provider setup guide](./GAME-PROVIDER-SETUP.md) for HUIDU credential storage, local setup, rotation, and troubleshooting.
 
 ## Build and tests
 
@@ -95,8 +96,8 @@ Test restore procedures periodically in a separate environment. Do not restore a
 - Set `NODE_ENV=production` and confirm the server starts with the production configuration.
 - Configure a restricted `ADMIN_ALLOWED_IPS` allowlist where practical.
 - Configure the intended Google, email, SMS, payment, and Sentry integrations.
-- Configure `GAME_API_BASE_URL`, `GAME_OPERATOR_ID`, `GAME_SECRET`, and `GAME_SALT` in the server environment; never put the operator secret or salt in a `VITE_` variable or browser code.
-- The game integration uses the provider's transfer-wallet API, so provider callbacks are not required. Confirm the configured API URL is the provider's HTTPS API endpoint.
+- Configure `HUIDU_SERVER_URL`, `HUIDU_AGENCY_UID`, `HUIDU_AES_KEY`, and `HUIDU_PLAYER_PREFIX` in the server environment; never put the AES key or agency UID in a `VITE_` variable or browser code.
+- The game integration uses HUIDU's transfer-wallet API, so provider callbacks are not required. Confirm the configured API URL is the provider's HTTPS API endpoint.
 - Confirm the provider account has both INR and PKR enabled before opening games to users in India and Pakistan.
 - Use only test-provider credentials for local integration checks. Rotate any credentials shared in screenshots or chats before deployment.
 - Verify the provider's licensing and local age/KYC requirements before enabling real-money games.

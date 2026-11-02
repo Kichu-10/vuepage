@@ -6,7 +6,6 @@ import { after, beforeEach, test } from "node:test";
 import express from "express";
 import jwt from "jsonwebtoken";
 import request from "supertest";
-import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 
@@ -14,10 +13,12 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "vuepage-test-"));
 process.env.SQLITE_PATH = path.join(tempDir, "test.sqlite");
 process.env.JWT_SECRET = "test-jwt-secret-that-is-long-enough";
 process.env.ADMIN_ALLOWED_IPS = "";
-process.env.GAME_API_BASE_URL = "https://provider.test";
-process.env.GAME_OPERATOR_ID = "test-operator";
-process.env.GAME_SECRET = "test-game-secret";
-process.env.GAME_SALT = "test-game-salt";
+process.env.HUIDU_SERVER_URL = "https://provider.test";
+process.env.HUIDU_AGENCY_UID = "test-agency";
+process.env.HUIDU_AES_KEY = "0123456789abcdef0123456789abcdef";
+process.env.HUIDU_PLAYER_PREFIX = "h2f9cc";
+process.env.GAME_CURRENCY_IN = "INR";
+process.env.GAME_CURRENCY_PK = "PKR";
 
 const database = await import("../server/database.js");
 const { createAuthRouter, createAdminAuthRouter } = await import("../server/routers/auth.js");
@@ -26,17 +27,18 @@ const { createAdminRouter } = await import("../server/routers/admin.js");
 const { createGamesRouter } = await import("../server/routers/games.js");
 const { createPromotionsRouter } = await import("../server/routers/promotions.js");
 const { createProfileRouter } = await import("../server/routers/profile.js");
-const { signGameProviderParameters } = await import("../server/services/game-provider.js");
+const { decryptHuiduPayload, encryptHuiduPayload } = await import("../server/services/game-provider.js");
+const testAesKey = process.env.HUIDU_AES_KEY;
 
 const app = express();
 app.use(express.json());
 app.use("/api/auth", createAuthRouter());
 app.use("/api/wallet", createWalletRouter(path.join(tempDir, "uploads")));
 app.use("/api/games", createGamesRouter());
-app.use("/api/promotions", createPromotionsRouter());
+app.use("/api/promotions", createPromotionsRouter(path.join(tempDir, "uploads")));
 app.use("/api/auth", createProfileRouter(path.join(tempDir, "uploads")));
 app.use("/api/admin", createAdminAuthRouter());
-app.use("/api/admin", createAdminRouter());
+app.use("/api/admin", createAdminRouter(path.join(tempDir, "uploads")));
 
 const account = {
   id: "user-1",
@@ -58,6 +60,19 @@ const admin = {
 
 function tokenFor(user) {
   return jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET);
+}
+
+function decodeHuiduRequest(options) {
+  const outer = JSON.parse(options.body);
+  const payload = JSON.parse(decryptHuiduPayload(outer.payload, testAesKey));
+  assert.equal(outer.agency_uid, process.env.HUIDU_AGENCY_UID);
+  assert.equal(outer.timestamp, String(payload.timestamp));
+  assert.equal(payload.agency_uid, process.env.HUIDU_AGENCY_UID);
+  return payload;
+}
+
+function huiduResponse(payload) {
+  return { ok: true, json: async () => ({ code: 0, msg: "", payload }) };
 }
 
 function resetDatabase({ users = [account, admin], transactions = [] } = {}) {
@@ -170,7 +185,7 @@ test("promotions are available only to signed-in users and admin settings contro
     supportPhone: "",
     supportHours: "24/7",
     promotions: [
-      { id: "welcome", title: "Welcome offer", description: "For eligible members", reward: "See terms", terms: "One per account", active: true },
+      { id: "welcome", title: "Welcome offer", description: "For eligible members", reward: "See terms", terms: "One per account", bannerIncludesText: true, active: true },
       { id: "paused", title: "Paused offer", active: false },
     ],
   }).expect(200);
@@ -178,7 +193,23 @@ test("promotions are available only to signed-in users and admin settings contro
   const response = await request(app).get("/api/promotions").set(memberHeaders).expect(200);
   assert.equal(response.body.promotions.length, 1);
   assert.equal(response.body.promotions[0].id, "welcome");
+  assert.equal(response.body.promotions[0].bannerIncludesText, true);
   assert.equal(database.readDb().platformSettings.promotions.length, 2);
+
+  const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]);
+  const upload = await request(app)
+    .post("/api/admin/promotions/welcome/banner")
+    .set(adminHeaders)
+    .attach("banner", png, { filename: "offer.png", contentType: "image/png" })
+    .expect(200);
+  assert.match(upload.body.promotion.bannerImage, /^promotion-[\w-]+\.png$/);
+  const updatedPromotions = await request(app).get("/api/promotions").set(memberHeaders).expect(200);
+  assert.equal(updatedPromotions.body.promotions[0].bannerUrl, "/api/promotions/welcome/banner");
+  assert.equal((await request(app).get(updatedPromotions.body.promotions[0].bannerUrl).expect(200)).body.length, png.length);
+  await request(app).post("/api/admin/promotions/welcome/banner")
+    .set(memberHeaders)
+    .attach("banner", png, { filename: "offer.png", contentType: "image/png" })
+    .expect(403);
 });
 
 test("profile pictures are authenticated, validated, and not exposed as server paths", async () => {
@@ -210,6 +241,12 @@ test("profile pictures are authenticated, validated, and not exposed as server p
     .set(headers)
     .attach("avatar", Buffer.alloc(3 * 1024 * 1024 + 1, 0), { filename: "large.png", contentType: "image/png" })
     .expect(400);
+});
+
+test("Google profile picture URLs persist in user records", () => {
+  const pictureUrl = "https://lh3.googleusercontent.com/a/test-photo";
+  resetDatabase({ users: [{ ...account, googlePictureUrl: pictureUrl }] });
+  assert.equal(database.readDb().users[0].googlePictureUrl, pictureUrl);
 });
 
 test("admin login works through the split router without weakening admin guards", async () => {
@@ -274,15 +311,10 @@ test("legacy JSON columns migrate into normalized columns and ledger schema", ()
   assert.equal(migrated.ledgerTable, true);
 });
 
-test("provider request signing matches the documented sample", () => {
-  const hash = signGameProviderParameters({
-    traceId: "b3f37e57-2873-40b1aa95-f126c25ed311",
-    operatorId: "abc123",
-    token: "e89045458a990e04d684418a2b8a2228",
-    gameId: 31010,
-    language: "en",
-  }, "2b5b996469686a8966c1205318811f08", "sfnbDdWvsRSHJvRdpiilKfxjZ8ZWRe3i");
-  assert.equal(hash, "fbf68f91e250e4894e0f11923d3fc246");
+test("HUIDU uses AES-256-ECB with base64 and PKCS padding", () => {
+  const plaintext = JSON.stringify({ agency_uid: "test-agency", timestamp: 1711524622000 });
+  const ciphertext = encryptHuiduPayload(plaintext, testAesKey);
+  assert.equal(decryptHuiduPayload(ciphertext, testAesKey), plaintext);
 });
 
 test.skip("obsolete seamless game catalog and launch test", async () => {
@@ -467,7 +499,7 @@ test.skip("obsolete seamless game bet and signature test", async () => {
   assert.equal(invalidSignature.body.error, 1004);
 });
 
-test("game catalog exposes provider signature rejection as an upstream error", async () => {
+test.skip("obsolete legacy-provider catalog error test", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
     ok: true,
@@ -482,7 +514,7 @@ test("game catalog exposes provider signature rejection as an upstream error", a
   }
 });
 
-test("game launch transfers only available funds once using a stable provider transaction", async () => {
+test.skip("obsolete legacy-provider launch transfer test", async () => {
   resetDatabase({
     users: [{ ...account, country: "IN", balance: 500 }, admin],
     transactions: [{
@@ -539,7 +571,7 @@ test("game launch transfers only available funds once using a stable provider tr
   }
 });
 
-test("ambiguous game transfer retries with the same provider transaction ID", async () => {
+test.skip("obsolete legacy-provider transfer retry test", async () => {
   resetDatabase({ users: [{ ...account, country: "IN", balance: 500 }, admin] });
   const originalFetch = globalThis.fetch;
   const transferIds = [];
@@ -586,7 +618,7 @@ test("ambiguous game transfer retries with the same provider transaction ID", as
   }
 });
 
-test("returning game funds credits the main wallet and ledger exactly once", async () => {
+test.skip("obsolete legacy-provider return-funds test", async () => {
   resetDatabase({ users: [{ ...account, country: "IN", balance: 100 }, admin] });
   const player = database.ensureGamePlayer(account.id, "INR");
   database.markGamePlayerCreated(account.id);
@@ -631,6 +663,193 @@ test("returning game funds credits the main wallet and ledger exactly once", asy
     assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 1);
     assert.equal(database.db.prepare("SELECT direction FROM game_wallet_transfers").get().direction, "out");
     assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 142.5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HUIDU catalog errors are surfaced without exposing request credentials", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    assert.match(String(url), /\/game\/providers\?/);
+    return { ok: true, json: async () => ({ code: 10022, msg: "Invalid parameters" }) };
+  };
+  try {
+    const response = await request(app).get("/api/games").expect(502);
+    assert.equal(response.body.error, "Invalid parameters");
+    assert.equal(response.body.code, 10022);
+    assert.doesNotMatch(JSON.stringify(response.body), /test-agency|0123456789/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HUIDU maps supplier game UIDs and launches with an atomic wallet credit", async () => {
+  resetDatabase({
+    users: [{ ...account, country: "IN", balance: 500 }, admin],
+    transactions: [{
+      id: "reserved-withdrawal",
+      userId: account.id,
+      username: account.username,
+      type: "withdrawal",
+      amount: 200,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    }],
+  });
+  const originalFetch = globalThis.fetch;
+  const transferIds = [];
+  globalThis.fetch = async (url, options) => {
+    const requestUrl = new URL(String(url));
+    if (requestUrl.pathname === "/game/providers") {
+      return {
+        ok: true,
+        json: async () => ({ code: 0, msg: "Success", data: [{ code: "pg", name: "PGSoft", status: 1 }] }),
+      };
+    }
+    if (requestUrl.pathname === "/game/list") {
+      assert.equal(requestUrl.searchParams.get("code"), "pg");
+      return {
+        ok: true,
+        json: async () => ({
+          code: 0,
+          msg: "Success",
+          data: [{
+            game_uid: "83a6890cf84e4c5a6bacf96d5355d472",
+            game_name: "Queen of Bounty",
+            game_type: "Slot Game",
+            status: 1,
+          }],
+        }),
+      };
+    }
+    if (requestUrl.pathname === "/game/v2") {
+      const payload = decodeHuiduRequest(options);
+      transferIds.push(payload.transfer_id);
+      assert.ok(payload.member_account.startsWith(process.env.HUIDU_PLAYER_PREFIX));
+      assert.ok(payload.member_account.length <= 20);
+      assert.equal(payload.game_uid, "83a6890cf84e4c5a6bacf96d5355d472");
+      assert.equal(payload.credit_amount, "300.00");
+      assert.equal(payload.currency_code, "INR");
+      assert.equal(payload.platform, 2);
+      return huiduResponse({
+        game_launch_url: "https://games.provider.test/session",
+        transfer_amount: "300.00",
+        after_amount: "300.00",
+        transfer_status: 1,
+      });
+    }
+    throw new Error(`Unexpected HUIDU URL ${url}`);
+  };
+  try {
+    const catalog = await request(app).get("/api/games").expect(200);
+    assert.deepEqual(catalog.body.games, [{
+      id: "83a6890cf84e4c5a6bacf96d5355d472",
+      name: "Queen of Bounty",
+      provider: "PGSoft",
+      providerCode: "pg",
+      gameType: "Slot Game",
+      status: 0,
+    }]);
+
+    const response = await request(app)
+      .post("/api/games/83a6890cf84e4c5a6bacf96d5355d472/launch")
+      .set("Authorization", `Bearer ${tokenFor(account)}`)
+      .send({ platform: 2 })
+      .expect(200);
+    assert.equal(response.body.gameUrl, "https://games.provider.test/session");
+    assert.equal(response.body.balance, 200);
+    assert.equal(transferIds.length, 1);
+    assert.ok(transferIds[0]);
+    assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 200);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 1);
+    assert.equal(database.db.prepare("SELECT status FROM game_wallet_transfers").get().status, "completed");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HUIDU ambiguous launch retries reuse the original transfer ID", async () => {
+  resetDatabase({ users: [{ ...account, country: "IN", balance: 500 }, admin] });
+  const originalFetch = globalThis.fetch;
+  const transferIds = [];
+  let simulateTimeout = true;
+  globalThis.fetch = async (url, options) => {
+    const requestUrl = new URL(String(url));
+    if (requestUrl.pathname === "/game/v2") {
+      const payload = decodeHuiduRequest(options);
+      transferIds.push(payload.transfer_id);
+      if (simulateTimeout) {
+        simulateTimeout = false;
+        throw new Error("simulated network timeout");
+      }
+      return huiduResponse({
+        game_launch_url: "https://games.provider.test/session",
+        transfer_amount: "500.00",
+        after_amount: "500.00",
+        transfer_status: 1,
+      });
+    }
+    throw new Error(`Unexpected HUIDU URL ${url}`);
+  };
+  try {
+    const headers = { Authorization: `Bearer ${tokenFor(account)}` };
+    await request(app).post("/api/games/83a6890cf84e4c5a6bacf96d5355d472/launch")
+      .set(headers).send({}).expect(502);
+    assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 0);
+    await request(app).post("/api/games/83a6890cf84e4c5a6bacf96d5355d472/launch")
+      .set(headers).send({}).expect(200);
+    assert.equal(transferIds.length, 2);
+    assert.equal(transferIds[0], transferIds[1]);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HUIDU wallet return queries the balance and credits the main wallet once", async () => {
+  resetDatabase({ users: [{ ...account, country: "IN", balance: 100 }, admin] });
+  const player = database.ensureGamePlayer(account.id, "INR");
+  database.markGamePlayerCreated(account.id);
+  const originalFetch = globalThis.fetch;
+  const transferIds = [];
+  let simulateTimeout = true;
+  globalThis.fetch = async (url, options) => {
+    const requestUrl = new URL(String(url));
+    if (requestUrl.pathname !== "/game/v2") throw new Error(`Unexpected HUIDU URL ${url}`);
+    const payload = decodeHuiduRequest(options);
+    if (Number(payload.credit_amount) === 0) {
+      assert.equal(payload.currency_code, player.currency);
+      return huiduResponse({ after_amount: "42.50", transfer_status: 1 });
+    }
+    transferIds.push(payload.transfer_id);
+    assert.equal(payload.credit_amount, "-42.50");
+    if (simulateTimeout) {
+      simulateTimeout = false;
+      throw new Error("simulated network timeout");
+    }
+    return huiduResponse({
+      transfer_amount: "42.50",
+      after_amount: "0.00",
+      transfer_status: 1,
+    });
+  };
+  try {
+    const headers = { Authorization: `Bearer ${tokenFor(account)}` };
+    const wallet = await request(app).get("/api/games/wallet").set(headers).expect(200);
+    assert.equal(wallet.body.currency, player.currency);
+    assert.equal(wallet.body.balance, 42.5);
+    await request(app).post("/api/games/wallet/return").set(headers).send({}).expect(502);
+    assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 100);
+    const returned = await request(app).post("/api/games/wallet/return").set(headers).send({}).expect(200);
+    assert.equal(transferIds.length, 2);
+    assert.equal(transferIds[0], transferIds[1]);
+    assert.equal(returned.body.amount, 42.5);
+    assert.equal(returned.body.balance, 142.5);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 1);
+    assert.equal(database.db.prepare("SELECT direction FROM game_wallet_transfers").get().direction, "out");
+    assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 142.5);
+    assert.ok(player.playerId.startsWith(process.env.HUIDU_PLAYER_PREFIX));
   } finally {
     globalThis.fetch = originalFetch;
   }

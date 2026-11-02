@@ -25,17 +25,37 @@
     <main class="content">
       <template v-if="currentPage === 'home'">
       <section v-if="signedIn && activePromotions.length" class="promo-frame" aria-label="Member promotions">
-        <div class="hero">
-          <div class="hero-copy">
-            <p class="hero-title"><span>{{ activePromotions[0]?.title }}</span></p>
-            <p class="hero-subtitle">{{ activePromotions[0]?.description }}</p>
-            <p class="hero-amount"><small>OFFER</small>{{ activePromotions[0]?.reward || "See offer terms" }}</p>
+        <div class="hero" :class="{ 'hero-with-art': homePromotion?.bannerUrl && !homePromotion.bannerIncludesText, 'hero-full-creative': homePromotion?.bannerUrl && homePromotion.bannerIncludesText }">
+          <button v-if="homePromotion?.bannerUrl && homePromotion.bannerIncludesText" class="hero-creative-button" :aria-label="`View ${homePromotion.title}`" @click="navigateTo('/promotions')">
+            <img class="hero-full-creative-image" :src="homePromotion.bannerUrl" alt="" />
+          </button>
+          <img
+            v-else-if="homePromotion?.bannerUrl"
+            class="hero-art"
+            :src="homePromotion.bannerUrl"
+            alt=""
+          />
+          <div v-if="!homePromotion?.bannerIncludesText || !homePromotion?.bannerUrl" class="hero-copy">
+            <p class="hero-title"><span>{{ homePromotion?.title }}</span></p>
+            <p class="hero-subtitle">{{ homePromotion?.description }}</p>
+            <p class="hero-amount"><small>OFFER</small>{{ homePromotion?.reward || "See offer terms" }}</p>
             <button class="claim-button" @click="navigateTo('/promotions')">View offer <span><ChevronRight :size="20" :stroke-width="3" /></span></button>
+          </div>
+          <div v-if="activePromotions.length > 1 && (!homePromotion?.bannerIncludesText || !homePromotion?.bannerUrl)" class="hero-dots" aria-label="Promotion slides">
+            <button
+              v-for="(promotion, index) in activePromotions"
+              :key="promotion.id"
+              :class="{ selected: homePromotionIndex === index }"
+              :aria-label="`Show promotion ${index + 1}: ${promotion.title}`"
+              :aria-current="homePromotionIndex === index ? 'true' : undefined"
+              @click="homePromotionIndex = index"
+            />
           </div>
         </div>
       </section>
       <section v-else class="welcome-banner">
-        <div><span class="eyebrow">WELCOME TO B9 GAME</span><h1>Find your next game</h1><p>Browse games, manage your account, and view member offers after signing in.</p></div>
+        <img :src="welcomeBanner" alt="B9 Game artwork featuring a woman" class="welcome-banner-image" />
+        <div class="welcome-banner-copy"><span class="eyebrow">WELCOME TO B9 GAME</span><h1>Find your next game</h1><p>Browse games, manage your account, and view member offers after signing in.</p></div>
         <button v-if="!signedIn" class="primary-button" @click="showAuth">Sign in</button>
         <button v-else class="primary-button" @click="navigateTo('/games')">Browse games</button>
       </section>
@@ -112,7 +132,7 @@
             v-for="game in visibleGames"
             :key="game.id"
             class="game-card"
-            :class="[game.provider === 'PG' ? 'fortune-card' : 'fishing-card', { 'game-unavailable': game.status !== 0 }]"
+            :class="[game.provider.toLowerCase().includes('pg') || game.gameType.toLowerCase().includes('slot') ? 'fortune-card' : 'fishing-card', { 'game-unavailable': game.status !== 0 }]"
             role="button"
             tabindex="0"
             :aria-label="game.status === 0 ? `Play ${game.name}` : `${game.name} unavailable`"
@@ -121,7 +141,7 @@
             @keydown.enter="play(game)"
             @keydown.space.prevent="play(game)"
           >
-            <img :src="game.provider === 'PG' ? slot : fish" :alt="game.name" loading="lazy" />
+            <img :src="game.provider.toLowerCase().includes('pg') || game.gameType.toLowerCase().includes('slot') ? slot : fish" :alt="game.name" loading="lazy" />
             <div class="game-shade" />
             <span class="game-brand">{{ game.provider }}</span>
             <span class="game-art-title" aria-hidden="true">{{ game.name }}</span>
@@ -152,13 +172,29 @@
         <p v-else-if="promotionsError" class="empty-state">{{ promotionsError }}</p>
         <p v-else-if="activePromotions.length === 0" class="empty-state">There are no active offers right now.</p>
         <div v-else class="promotion-grid">
-          <article v-for="(promotion, index) in activePromotions" :key="promotion.id" class="promotion-tile">
-            <span class="promotion-number">{{ String(index + 1).padStart(2, "0") }}</span>
-            <span v-if="promotion.reward" class="promotion-value">{{ promotion.reward }}</span>
-            <h2>{{ promotion.title }}</h2>
-            <p v-if="promotion.description">{{ promotion.description }}</p>
-            <p v-if="promotion.terms" class="promotion-terms">{{ promotion.terms }}</p>
-            <button class="primary-button" @click="askAboutPromotion(promotion)">Ask about this offer</button>
+          <article v-for="(promotion, index) in activePromotions" :key="promotion.id" class="promotion-banner" :class="{ 'promotion-full-creative': promotion.bannerIncludesText && promotion.bannerUrl }">
+            <template v-if="promotion.bannerIncludesText && promotion.bannerUrl">
+              <button class="promotion-complete-link" :aria-label="`Ask about ${promotion.title}`" @click="askAboutPromotion(promotion)">
+                <img class="promotion-banner-complete" :src="promotion.bannerUrl" alt="" />
+              </button>
+              <div class="promotion-full-details">
+                <h2>{{ promotion.title }}</h2>
+                <p v-if="promotion.description">{{ promotion.description }}</p>
+                <p v-if="promotion.terms" class="promotion-terms">{{ promotion.terms }}</p>
+                <button class="primary-button" @click="askAboutPromotion(promotion)">Ask about this offer</button>
+              </div>
+            </template>
+            <template v-else>
+              <img v-if="promotion.bannerUrl" class="promotion-banner-art" :src="promotion.bannerUrl" alt="" />
+              <div class="promotion-banner-copy">
+                <span class="promotion-number">OFFER {{ String(index + 1).padStart(2, "0") }}</span>
+                <span v-if="promotion.reward" class="promotion-value">{{ promotion.reward }}</span>
+                <h2>{{ promotion.title }}</h2>
+                <p v-if="promotion.description">{{ promotion.description }}</p>
+                <p v-if="promotion.terms" class="promotion-terms">{{ promotion.terms }}</p>
+                <button class="primary-button" @click="askAboutPromotion(promotion)">Ask about this offer</button>
+              </div>
+            </template>
           </article>
         </div>
         <aside class="responsible-play-note">
@@ -249,7 +285,7 @@
         <template v-if="signedIn">
           <section class="account-card">
             <div class="account-avatar">
-              <img v-if="avatarUrl" :src="avatarUrl" alt="Profile picture" />
+              <img v-if="displayedAvatarUrl" :src="displayedAvatarUrl" alt="Profile picture" @error="handleAvatarError" />
               <span v-else>{{ user?.username?.slice(0, 1).toUpperCase() || "U" }}</span>
             </div>
             <div class="account-identity"><span>Signed in as</span><strong>{{ user?.username }}</strong><small>{{ user?.email || "Email not set" }}</small></div>
@@ -257,7 +293,7 @@
           </section>
           <label class="avatar-upload-button" :class="{ uploading: avatarUploading }">
             <UserRound :size="18" />
-            {{ avatarUploading ? "Uploading picture..." : avatarUrl ? "Change profile picture" : "Upload profile picture" }}
+            {{ avatarUploading ? "Uploading picture..." : displayedAvatarUrl ? "Change profile picture" : "Upload profile picture" }}
             <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="avatarUploading" @change="uploadProfilePicture" />
           </label>
           <div class="account-action-grid">
@@ -295,24 +331,17 @@
             <button type="button" :class="{ active: authMode === 'login' }" @click="authMode = 'login'">Sign In</button>
             <button type="button" :class="{ active: authMode === 'register' }" @click="authMode = 'register'">Register</button>
           </div>
-          <template v-if="authMode === 'login'">
-            <select v-model="authCountry" aria-label="Country for Google Sign-In">
-              <option value="">Select country for Google Sign-In</option>
-              <option value="IN">India</option>
-              <option value="PK">Pakistan</option>
-            </select>
-            <div v-if="googleClientId" id="google-signin-button" class="google-signin-button" />
-            <p v-else class="auth-configuration-note">Google Sign-In is not configured for this site.</p>
-            <div class="auth-divider"><span>or sign in with username</span></div>
-          </template>
+          <select v-model="authCountry" :aria-label="authMode === 'login' ? 'Country for Google Sign-In' : 'Country'" :required="authMode === 'register'">
+            <option value="">{{ authMode === "login" ? "Select country for Google Sign-In" : "Select country" }}</option>
+            <option value="IN">India</option>
+            <option value="PK">Pakistan</option>
+          </select>
+          <div v-if="googleClientId" id="google-signin-button" class="google-signin-button" />
+          <p v-else class="auth-configuration-note">Google Sign-In is not configured for this site.</p>
+          <div class="auth-divider"><span>{{ authMode === "login" ? "or sign in with username" : "or create account with email" }}</span></div>
           <input v-model="authUsername" autocomplete="username" placeholder="Username" aria-label="Username" required minlength="3" />
           <template v-if="authMode === 'register'">
             <input v-model="authEmail" type="email" autocomplete="email" placeholder="Gmail or email address" aria-label="Email address" required />
-            <select v-model="authCountry" aria-label="Country" required>
-              <option value="">Select country</option>
-              <option value="IN">India</option>
-              <option value="PK">Pakistan</option>
-            </select>
           </template>
           <input v-model="authPassword" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password" required minlength="6" />
           <button class="primary-button full-button" type="submit" :disabled="authLoading">
@@ -364,7 +393,7 @@
             class="favorite-game"
             @click="play(game); modal = null"
           >
-            <img :src="game.provider === 'PG' ? slot : fish" :alt="game.name" />
+            <img :src="game.provider.toLowerCase().includes('pg') || game.gameType.toLowerCase().includes('slot') ? slot : fish" :alt="game.name" />
             <span><strong>{{ game.name }}</strong><small>{{ game.provider }}</small></span>
           </button>
         </div>
@@ -394,12 +423,12 @@
         <div v-else-if="modal === 'profile'" class="modal-content profile-info">
           <div class="profile-picture-editor">
             <div class="profile-avatar-preview">
-              <img v-if="avatarUrl" :src="avatarUrl" alt="Your profile picture" />
+              <img v-if="displayedAvatarUrl" :src="displayedAvatarUrl" alt="Your profile picture" @error="handleAvatarError" />
               <span v-else>{{ user?.username?.slice(0, 1).toUpperCase() || "U" }}</span>
             </div>
             <label class="avatar-upload-button" :class="{ uploading: avatarUploading }">
               <UserRound :size="18" />
-              {{ avatarUploading ? "Uploading picture..." : avatarUrl ? "Change profile picture" : "Upload profile picture" }}
+              {{ avatarUploading ? "Uploading picture..." : displayedAvatarUrl ? "Change profile picture" : "Upload profile picture" }}
               <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="avatarUploading" @change="uploadProfilePicture" />
             </label>
             <small class="upload-hint">JPEG, PNG, or WebP · up to 3 MB</small>
@@ -477,6 +506,7 @@ import {
 import fish from "./assets/g-fish.jpg";
 import slot from "./assets/g-slot.jpg";
 import b9Logo from "./assets/b9-logo.jpg";
+import welcomeBanner from "./assets/banner.jpg";
 import jackpotBanner from "./assets/jackpot-banner.jpg";
 import popularCategory from "./assets/01_popular.png";
 import pgSlotCategory from "./assets/02_pg_slot.png";
@@ -486,15 +516,17 @@ import inOutCategory from "./assets/05_inout.png";
 
 type GameCategory = "Popular" | "PG Slot" | "Spribe" | "Fishing" | "InOut";
 type Modal = "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | "transactions" | "favorites" | "support" | null;
-type AuthUser = { id: string; username: string; phone: string; email: string; country: string; kycStatus: string; role: "user" | "admin"; balance: number; status: string; createdAt: string; lastLoginAt: string | null };
+type AuthUser = { id: string; username: string; phone: string; email: string; country: string; kycStatus: string; role: "user" | "admin"; balance: number; status: string; createdAt: string; lastLoginAt: string | null; googlePictureUrl?: string };
 type WalletTransaction = { id: string; type: "deposit" | "withdrawal"; amount: number; status: string; createdAt: string; paymentMethod?: string; paymentReference?: string; paymentNote?: string };
 type PaymentDetails = { bankName: string; accountName: string; accountNumber: string; iban: string; upiId: string; walletName: string; walletNumber: string; instructions: string };
 type InboxMessage = { id: string; type: string; title: string; message: string; read: boolean; createdAt: string };
-type Promotion = { id: string; title: string; description: string; reward: string; terms: string; active: boolean };
+type Promotion = { id: string; title: string; description: string; reward: string; terms: string; active: boolean; bannerImage?: string; bannerUrl?: string; bannerIncludesText?: boolean };
 type Game = {
-  id: number;
+  id: string;
   name: string;
   provider: string;
+  providerCode: string;
+  gameType: string;
   status: number;
 };
 
@@ -517,10 +549,10 @@ const selectedCategory = ref<GameCategory>("Popular");
 const games = ref<Game[]>([]);
 const gamesLoading = ref(true);
 const gamesError = ref("");
-const launchingGameId = ref<number | null>(null);
+const launchingGameId = ref<string | null>(null);
 const balance = ref(8891.2);
 const jackpot = ref(10799004.2);
-const favorites = ref<number[]>([]);
+const favorites = ref<string[]>([]);
 const query = ref("");
 const searchOpen = ref(false);
 const modal = ref<Modal>(null);
@@ -534,6 +566,8 @@ const route = useRoute();
 const router = useRouter();
 const user = ref<AuthUser | null>(null);
 const avatarUrl = ref("");
+const displayedAvatarUrl = computed(() => avatarUrl.value || user.value?.googlePictureUrl || "");
+const avatarLoading = ref(false);
 const avatarUploading = ref(false);
 const authMode = ref<"login" | "register">("login");
 const authUsername = ref("");
@@ -574,14 +608,17 @@ const maintenanceMode = ref(false);
 const promotions = ref<Promotion[]>([]);
 const promotionsLoading = ref(false);
 const promotionsError = ref("");
+const homePromotionIndex = ref(0);
 const googleClientId = ref("");
 let inboxTimer: ReturnType<typeof setInterval> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+let promotionCarouselTimer: ReturnType<typeof setInterval> | undefined;
 let googleScriptPromise: Promise<void> | undefined;
 let googleInitialized = false;
 
 const currentPage = computed(() => route.path.slice(1) || "home");
 const activePromotions = computed(() => promotions.value.filter((promotion) => promotion.active));
+const homePromotion = computed(() => activePromotions.value[homePromotionIndex.value] || activePromotions.value[0]);
 const kycLabel = computed(() => {
   if (user.value?.kycStatus === "verified") return "Verified";
   if (user.value?.kycStatus === "pending") return "Pending review";
@@ -595,10 +632,11 @@ const visibleGames = computed(() => {
     : games.value.filter((game) => {
       const provider = game.provider.toLowerCase();
       if (selectedCategory.value === "Popular") return true;
-      if (selectedCategory.value === "PG Slot") return ["pg", "jl", "pp"].includes(provider);
+      const gameType = game.gameType.toLowerCase();
+      if (selectedCategory.value === "PG Slot") return ["pg", "jili", "pragmatic"].some((name) => provider.includes(name)) || gameType.includes("slot");
       if (selectedCategory.value === "Spribe") return provider.includes("spribe");
-      if (selectedCategory.value === "Fishing") return provider.includes("fish");
-      return provider === "in" || provider.includes("inout");
+      if (selectedCategory.value === "Fishing") return provider.includes("fish") || gameType.includes("fish");
+      return provider.includes("inout") || gameType.includes("inout");
     });
   return currentPage.value === "home" ? filtered.slice(0, 6) : filtered;
 });
@@ -620,7 +658,7 @@ const favoriteNames = computed(() => {
 });
 
 watch([modal, authMode, googleClientId], () => {
-  if (modal.value === "auth" && authMode.value === "login" && googleClientId.value) {
+  if (modal.value === "auth" && googleClientId.value) {
     window.setTimeout(() => {
       void googleLogin().catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not load Google Sign-In"));
     }, 0);
@@ -636,15 +674,22 @@ watch(() => [route.path, signedIn.value] as const, ([path, isSignedIn]) => {
   }
 });
 
-watch(signedIn, (isSignedIn) => {
+watch([signedIn, () => route.path, modal], ([isSignedIn, path, activeModal]) => {
   if (!isSignedIn) {
     clearAvatarUrl();
     return;
   }
-  void loadProfilePicture().catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not load profile picture"));
+  if (path === "/account" || activeModal === "profile") {
+    void loadProfilePicture().catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not load profile picture"));
+  }
 });
 
 onMounted(async () => {
+  promotionCarouselTimer = setInterval(() => {
+    if (currentPage.value === "home" && activePromotions.value.length > 1) {
+      homePromotionIndex.value = (homePromotionIndex.value + 1) % activePromotions.value.length;
+    }
+  }, 5000);
   void loadGames();
   token.value = localStorage.getItem("b9_token") || "";
   try {
@@ -668,6 +713,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (noticeTimer) clearTimeout(noticeTimer);
   if (inboxTimer) clearInterval(inboxTimer);
+  if (promotionCarouselTimer) clearInterval(promotionCarouselTimer);
   clearAvatarUrl();
 });
 
@@ -700,28 +746,38 @@ function clearAvatarUrl(): void {
   avatarUrl.value = "";
 }
 
+function handleAvatarError(): void {
+  if (avatarUrl.value) clearAvatarUrl();
+  else if (user.value) user.value.googlePictureUrl = "";
+}
+
 async function loadProfilePicture(): Promise<void> {
   const sessionToken = token.value;
-  if (!sessionToken) return;
-  const response = await fetch("/api/auth/profile/avatar", {
-    headers: { Authorization: `Bearer ${sessionToken}` },
-  });
-  if (token.value !== sessionToken) return;
-  if (response.status === 404) {
+  if (!sessionToken || avatarLoading.value) return;
+  avatarLoading.value = true;
+  try {
+    const response = await fetch("/api/auth/profile/avatar", {
+      headers: { Authorization: `Bearer ${sessionToken}` },
+    });
+    if (token.value !== sessionToken) return;
+    if (response.status === 404) {
+      clearAvatarUrl();
+      return;
+    }
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "Could not load profile picture");
+    }
+    const nextUrl = URL.createObjectURL(await response.blob());
+    if (token.value !== sessionToken) {
+      URL.revokeObjectURL(nextUrl);
+      return;
+    }
     clearAvatarUrl();
-    return;
+    avatarUrl.value = nextUrl;
+  } finally {
+    avatarLoading.value = false;
   }
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || "Could not load profile picture");
-  }
-  const nextUrl = URL.createObjectURL(await response.blob());
-  if (token.value !== sessionToken) {
-    URL.revokeObjectURL(nextUrl);
-    return;
-  }
-  clearAvatarUrl();
-  avatarUrl.value = nextUrl;
 }
 
 async function uploadProfilePicture(event: Event): Promise<void> {
@@ -839,8 +895,10 @@ async function loadGames(): Promise<void> {
     const message = error instanceof Error ? error.message : "";
     gamesError.value = message === "Game provider is not configured"
       ? "Game catalog will appear after the provider is configured on the server."
-      : /invalid hash|signature/i.test(message)
-        ? "The game provider rejected the API signature. The server-side operator credentials or signing settings need to be verified."
+      : /invalid hash code/i.test(message)
+        ? "HUIDU rejected the game-catalog request (error 1004: Invalid hash code). The provider must confirm the catalog API authentication or issue valid API access."
+      : /HUIDU/i.test(message)
+        ? "Games are temporarily unavailable. Please check the HUIDU API configuration and try again."
         : "Games are temporarily unavailable. Please try again later.";
   } finally {
     gamesLoading.value = false;
@@ -911,7 +969,7 @@ function selectCategory(category: GameCategory): void {
 function scrollCategories(direction: number): void {
   categoryList.value?.scrollBy({ left: direction * 120, behavior: "smooth" });
 }
-function toggleFavorite(id: number): void {
+function toggleFavorite(id: string): void {
   favorites.value = favorites.value.includes(id)
     ? favorites.value.filter((favorite) => favorite !== id)
     : [...favorites.value, id];
@@ -931,7 +989,11 @@ async function play(game: Game): Promise<void> {
   gameWindow.opener = null;
   launchingGameId.value = game.id;
   try {
-    const data = await api(`/api/games/${game.id}/launch`, { method: "POST", body: "{}" });
+    const platform = window.matchMedia("(max-width: 760px)").matches ? 2 : 1;
+    const data = await api(`/api/games/${encodeURIComponent(game.id)}/launch`, {
+      method: "POST",
+      body: JSON.stringify({ platform }),
+    });
     balance.value = Number(data.balance);
     if (user.value) user.value.balance = balance.value;
     gameWindow.location.replace(data.gameUrl);
@@ -1285,19 +1347,32 @@ button { cursor: pointer; }
 .clear-search { display: grid; place-items: center; padding: 2px; border: 0; background: none; }
 .content { display: flex; flex-direction: column; gap: 10px; padding: 9px 11px 16px; }
 .promo-frame { padding: 8px; border-radius: 28px; background: #fff; box-shadow: 0 3px 12px rgb(32 98 51 / 5%); }
-.hero { position: relative; min-height: 190px; overflow: hidden; border-radius: 20px; color: #fff; background: radial-gradient(circle at 85% 15%, rgb(91 206 115 / 50%), transparent 36%), linear-gradient(120deg, #075e35, #128647 68%, #20a85b); }
+.hero { position: relative; min-height: 0; max-height: 320px; aspect-ratio: 393 / 168; overflow: hidden; border-radius: 20px; color: #fff; background: radial-gradient(circle at 85% 15%, rgb(91 206 115 / 50%), transparent 36%), linear-gradient(120deg, #075e35, #128647 68%, #20a85b); }
 .hero::after { position: absolute; inset: 0; content: ""; background: linear-gradient(90deg, rgb(3 83 39 / 38%) 0%, transparent 58%); pointer-events: none; }
-.hero-copy { position: relative; z-index: 1; display: flex; min-height: 190px; max-width: 780px; flex-direction: column; align-items: flex-start; justify-content: center; padding: 20px clamp(18px, 6vw, 54px); text-shadow: 0 1px 5px rgb(0 56 24 / 25%); }
-.hero-title { display: flex; align-items: baseline; gap: 7px; margin: 0; font-size: clamp(15px, 4.6vw, 23px); font-weight: 750; line-height: 1; }
+.hero-art { position: absolute; inset: 0 0 0 auto; width: 52%; height: 100%; object-fit: cover; object-position: center; mask-image: linear-gradient(90deg, transparent, #000 24%); }
+.hero-creative-button { position: absolute; inset: 0; display: block; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.hero-full-creative-image { display: block; width: 100%; height: 100%; object-fit: cover; }
+.hero-full-creative::after { display: none; }
+.hero-copy { position: relative; z-index: 1; display: flex; width: 100%; height: 100%; min-height: 0; max-width: 780px; flex-direction: column; align-items: flex-start; justify-content: center; padding: 12px clamp(14px, 5vw, 38px); text-shadow: 0 1px 5px rgb(0 56 24 / 25%); }
+.hero-with-art .hero-copy { max-width: 58%; }
+.hero-title { display: flex; align-items: baseline; gap: 7px; margin: 0; font-size: clamp(14px, 4.2vw, 20px); font-weight: 750; line-height: 1; }
 .hero-title strong { font-size: clamp(28px, 9.5vw, 50px); font-weight: 900; letter-spacing: -1.5px; }
-.hero-subtitle { max-width: 440px; margin: 7px 0 0; font-size: clamp(12px, 3.8vw, 17px); font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
-.hero-amount { display: flex; flex-direction: column; margin: 10px 0 0; color: #ffe66d; font-size: clamp(17px, 5vw, 28px); font-weight: 900; line-height: 1.15; overflow-wrap: anywhere; }
+.hero-subtitle { max-width: 440px; margin: 5px 0 0; font-size: clamp(11px, 3.3vw, 15px); font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; }
+.hero-amount { display: flex; flex-direction: column; margin: 6px 0 0; color: #ffe66d; font-size: clamp(17px, 5vw, 26px); font-weight: 900; line-height: 1.05; overflow-wrap: anywhere; }
 .hero-amount small { margin-bottom: 2px; color: #acd59c; font-size: 9px; font-weight: 750; }
-.claim-button { display: flex; width: fit-content; align-items: center; gap: 6px; margin-top: 6px; padding: 5px 7px 5px 12px; border: 0; border-radius: 99px; color: white; background: #28bf70; font-size: clamp(11px, 3.6vw, 15px); font-weight: 650; text-shadow: none; }
+.claim-button { display: flex; width: fit-content; align-items: center; gap: 6px; margin-top: 5px; padding: 4px 6px 4px 11px; border: 0; border-radius: 99px; color: white; background: #28bf70; font-size: clamp(10px, 3.3vw, 14px); font-weight: 650; text-shadow: none; }
 .claim-button > span { display: grid; width: 21px; height: 21px; place-items: center; border-radius: 50%; color: #229e5a; background: white; }
-.welcome-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: clamp(18px, 5vw, 28px); border: 1px solid #dfece1; border-radius: 20px; background: linear-gradient(135deg, #edf8ef, #fff); }
-.welcome-banner h1 { margin: 6px 0; color: #284534; font-size: clamp(21px, 6vw, 32px); }
-.welcome-banner p { max-width: 560px; margin: 0; color: #728078; font-size: 13px; line-height: 1.5; }
+.hero-dots { position: absolute; z-index: 2; right: 16px; bottom: 7px; left: 16px; display: flex; justify-content: center; gap: 7px; }
+.hero-dots button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: rgb(255 255 255 / 55%); cursor: pointer; }
+.hero-dots button.selected { width: 20px; border-radius: 9px; background: #fff; }
+.welcome-banner { position: relative; display: flex; min-height: 220px; align-items: center; justify-content: space-between; gap: 16px; overflow: hidden; padding: clamp(18px, 5vw, 28px); border-radius: 20px; color: white; background: #075e35; }
+.welcome-banner::before { position: absolute; z-index: 1; inset: 0; content: ""; background: linear-gradient(90deg, rgb(0 47 24 / 94%) 0%, rgb(0 47 24 / 79%) 45%, rgb(0 47 24 / 10%) 100%); pointer-events: none; }
+.welcome-banner-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 42%; }
+.welcome-banner-copy { position: relative; z-index: 2; max-width: 68%; }
+.welcome-banner .eyebrow { color: #9af0b4; }
+.welcome-banner h1 { margin: 6px 0; color: white; font-size: clamp(21px, 6vw, 32px); }
+.welcome-banner p { max-width: 560px; margin: 0; color: rgb(255 255 255 / 88%); font-size: 13px; line-height: 1.5; }
+.welcome-banner .primary-button { position: relative; z-index: 2; flex: 0 0 auto; }
 .welcome-banner .primary-button { flex: 0 0 auto; }
 .announcement { display: flex; min-height: 43px; align-items: center; gap: 10px; padding: 5px 7px 5px 14px; border-radius: 14px; color: #426d51; background: #e7f4e9; }
 .announcement-volume { flex: 0 0 auto; color: #36a564; fill: #36a564; }
@@ -1422,14 +1497,23 @@ button { cursor: pointer; }
 .page-heading p { max-width: 560px; margin: 0; color: #748078; font-size: 14px; line-height: 1.5; }
 .eyebrow { color: #23944f; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
 .promotion-grid { display: grid; gap: 12px; }
-.promotion-tile { position: relative; display: flex; min-height: 200px; flex-direction: column; align-items: flex-start; overflow: hidden; padding: 20px; border: 1px solid #dfece1; border-radius: 18px; background: linear-gradient(140deg, #eff9ee, #fff 70%); }
-.promotion-number { position: absolute; top: 10px; right: 15px; color: #e2eee3; font-size: 54px; font-weight: 900; line-height: 1; }
-.promotion-value { position: relative; z-index: 1; color: #22934b; font-size: 28px; font-weight: 900; }
-.promotion-tile h2 { position: relative; z-index: 1; margin: 10px 0 4px; color: #284534; font-size: 18px; }
-.promotion-tile p { margin: 0 0 8px; color: #728078; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.promotion-banner { position: relative; display: flex; min-height: 225px; align-items: center; overflow: hidden; border-radius: 18px; color: white; background: radial-gradient(circle at 85% 15%, rgb(91 206 115 / 50%), transparent 36%), linear-gradient(120deg, #075e35, #128647 68%, #20a85b); }
+.promotion-banner::after { position: absolute; inset: 0; content: ""; background: linear-gradient(90deg, rgb(3 63 31 / 94%) 0%, rgb(3 63 31 / 78%) 46%, rgb(3 63 31 / 5%) 100%); pointer-events: none; }
+.promotion-banner-art { position: absolute; inset: 0 0 0 auto; width: 55%; height: 100%; object-fit: cover; }
+.promotion-full-creative { display: grid; min-height: 0; align-items: stretch; aspect-ratio: auto; background: transparent; }
+.promotion-full-creative::after { display: none; }
+.promotion-complete-link { position: relative; display: block; width: 100%; aspect-ratio: 393 / 168; padding: 0; border: 0; border-radius: 18px; overflow: hidden; background: transparent; cursor: pointer; }
+.promotion-banner-complete { display: block; width: 100%; height: 100%; object-fit: cover; }
+.promotion-full-details { padding: 16px; border: 1px solid #e6eee8; border-radius: 12px; background: white; }
+.promotion-full-details h2 { margin: 0 0 6px; color: #284534; }
+.promotion-full-details p { color: #728078; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.promotion-banner-copy { position: relative; z-index: 1; display: flex; width: min(64%, 700px); flex-direction: column; align-items: flex-start; padding: 22px clamp(18px, 5vw, 38px); }
+.promotion-number { margin-bottom: 5px; color: #b7efc7; font-size: 10px; font-weight: 850; letter-spacing: .12em; }
+.promotion-value { position: relative; z-index: 1; color: #ffe66d; font-size: clamp(22px, 5vw, 36px); font-weight: 900; }
+.promotion-banner h2 { position: relative; z-index: 1; margin: 3px 0 4px; color: white; font-size: clamp(18px, 4vw, 26px); }
+.promotion-banner p { margin: 0 0 8px; color: rgb(255 255 255 / 90%); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .promotion-amount { margin-bottom: 14px; color: #ad7432; font-size: 12px; font-weight: 750; }
-.promotion-tile .promotion-terms { padding-top: 8px; border-top: 1px solid #e1ece2; font-size: 11px; }
-.promotion-tile .primary-button { margin-top: auto; }
+.promotion-banner .promotion-terms { padding-top: 8px; border-top: 1px solid rgb(255 255 255 / 25%); font-size: 11px; }
 .responsible-play-note { padding: 14px; border: 1px solid #e6e9d8; border-radius: 13px; color: #596449; background: #fbf9ed; }
 .responsible-play-note strong { font-size: 13px; }
 .responsible-play-note p { margin: 6px 0 0; font-size: 11px; line-height: 1.6; }
@@ -1457,7 +1541,7 @@ button { cursor: pointer; }
 .transaction-list { max-height: none; }
 .account-card { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid #e1ebe2; border-radius: 16px; background: white; }
 .account-avatar, .profile-avatar-preview { display: grid; overflow: hidden; flex: 0 0 auto; place-items: center; border-radius: 50%; color: white; background: #24a85a; font-weight: 800; }
-.account-avatar { width: 48px; height: 48px; font-size: 21px; }
+.account-avatar { width: 60px; height: 60px; font-size: 24px; }
 .account-avatar img, .profile-avatar-preview img { width: 100%; height: 100%; object-fit: cover; }
 .avatar-upload-button { display: flex; width: fit-content; min-height: 42px; align-items: center; justify-content: center; gap: 8px; padding: 8px 13px; border: 1px solid #d5e7d8; border-radius: 11px; color: #248b4b; background: white; font-size: 12px; font-weight: 700; cursor: pointer; }
 .avatar-upload-button.uploading { opacity: .65; cursor: wait; }
@@ -1559,6 +1643,10 @@ button { cursor: pointer; }
   .avatar-upload-button { max-width: 100%; }
   .inbox-message-heading { flex-wrap: wrap; }
   .promo-card { align-items: flex-start; }
+  .welcome-banner { min-height: 245px; align-items: flex-start; flex-direction: column; justify-content: center; }
+  .welcome-banner::before { background: linear-gradient(90deg, rgb(0 47 24 / 91%) 0%, rgb(0 47 24 / 76%) 52%, rgb(0 47 24 / 18%) 100%); }
+  .welcome-banner-image { object-position: 60% center; }
+  .welcome-banner-copy { max-width: 78%; }
   .bottom-nav { padding-right: max(8px, env(safe-area-inset-right)); padding-left: max(8px, env(safe-area-inset-left)); }
   .bottom-nav button { min-width: 48px; min-height: 48px; }
 }
@@ -1584,8 +1672,10 @@ button { cursor: pointer; }
   .search-wrap { padding-right: 24px; padding-left: 24px; }
   .content { gap: 14px; padding: 14px 18px 24px; }
   .promo-frame { padding: 10px; }
-  .hero { min-height: 220px; }
-  .hero-copy { min-height: 220px; }
+  .hero { min-height: 0; }
+  .hero-copy { min-height: 0; }
+  .hero-with-art .hero-copy { max-width: 70%; }
+  .hero-art { width: 48%; object-position: center; }
   .categories { min-height: 104px; padding-right: 18px; padding-left: 18px; }
   .category { max-width: 130px; }
   .category-image { width: 50px; height: 50px; }
@@ -1596,7 +1686,10 @@ button { cursor: pointer; }
   .modal-sheet { max-height: 88vh; border-radius: 24px; }
   .bottom-nav { display: none; }
   .page-frame { padding-bottom: 20px; }
-  .promotion-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .promotion-banner { min-height: 245px; align-items: flex-start; }
+  .promotion-full-creative { min-height: 0; }
+  .promotion-banner-art { width: 52%; }
+  .promotion-banner-copy { width: 76%; padding: 16px; }
   .wallet-summary-grid { gap: 14px; }
   .page-section { gap: 18px; padding-right: 4px; padding-left: 4px; }
 }
@@ -1620,7 +1713,6 @@ button { cursor: pointer; }
   .jackpot { border-radius: 14px; }
   .jackpot-value { bottom: 24%; font-size: 12px; }
   .game-grid { gap: 8px; }
-  .welcome-banner { align-items: flex-start; flex-direction: column; }
   .wallet-summary-grid { grid-template-columns: 1fr; }
   .wallet-workspace-heading { align-items: flex-start; flex-direction: column; }
   .wallet-workspace .wallet-tabs { width: 100%; }

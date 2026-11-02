@@ -42,7 +42,19 @@ if (isProduction && !process.env.ADMIN_PASSWORD) {
 }
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.json({ limit: "1mb" }));
-app.use(helmet({ crossOriginResourcePolicy: { policy: "same-site" } }));
+app.use(helmet({
+  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+  crossOriginResourcePolicy: { policy: "same-site" },
+  contentSecurityPolicy: {
+    directives: {
+      "connect-src": ["'self'", "https://accounts.google.com/gsi/"],
+      "frame-src": ["'self'", "https://accounts.google.com/gsi/"],
+      "img-src": ["'self'", "data:", "blob:", "https://googleusercontent.com", "https://*.googleusercontent.com"],
+      "script-src": ["'self'", "https://accounts.google.com/gsi/client"],
+      "style-src": ["'self'", "https://accounts.google.com/gsi/style"],
+    },
+  },
+}));
 app.use("/api/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, standardHeaders: true, legacyHeaders: false }));
 app.use("/api/admin/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false }));
 app.use("/api/admin", (_req, res, next) => {
@@ -83,10 +95,10 @@ app.use("/api/auth", createProfileRouter(uploadDir));
 app.use("/api/wallet", createWalletRouter(uploadDir));
 app.use("/api/auth", createKycRouter(uploadDir));
 app.use("/api/admin", createAdminAuthRouter());
-app.use("/api/admin", createAdminRouter());
+app.use("/api/admin", createAdminRouter(uploadDir));
 app.use("/api", createSupportRouter());
 app.use("/api/games", createGamesRouter());
-app.use("/api/promotions", createPromotionsRouter());
+app.use("/api/promotions", createPromotionsRouter(uploadDir));
 
 function auth(req, res, next) {
   const header = req.headers.authorization || "";
