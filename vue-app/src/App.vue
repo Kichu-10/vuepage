@@ -1,26 +1,13 @@
 <template>
   <div class="page-frame">
-    <header class="topbar">
-      <button class="header-icon menu-button" aria-label="Open menu" @click="modal = 'menu'">
-        <Menu :size="25" :stroke-width="2.4" />
-      </button>
-      <a class="public-brand" href="#" aria-label="B9 Game home" @click.prevent="goHome">
-        <img :src="b9Logo" class="brand-emblem" alt="B9" />
-        <span class="brand-wordmark">B9 Game</span>
-      </a>
-
-      <div class="header-actions">
-        <button class="balance-button" aria-label="Wallet balance, open deposit" @click="openDeposit">
-          <Wallet class="wallet-icon" :size="18" :stroke-width="2.8" />
-          <span class="balance-value">{{ signedIn ? formatMoney(balance) : "--" }}</span>
-          <span class="add-icon"><Plus :size="16" :stroke-width="3" /></span>
-        </button>
-        <button class="deposit-button" @click="openDeposit">Deposit <ChevronDown :size="14" /></button>
-        <button class="header-icon search-button" aria-label="Search games" @click="searchOpen = !searchOpen">
-          <Search :size="24" :stroke-width="2" />
-        </button>
-      </div>
-    </header>
+    <PublicHeader
+      :logo="b9Logo"
+      :balance-label="signedIn ? formatMoney(balance) : '--'"
+      @open-menu="modal = 'menu'"
+      @home="goHome"
+      @deposit="openDeposit"
+      @toggle-search="searchOpen = !searchOpen"
+    />
 
     <div v-if="searchOpen" class="search-wrap">
       <Search class="search-input-icon" :size="18" />
@@ -122,13 +109,14 @@
       </section>
     </main>
 
-    <footer class="bottom-nav">
-      <button class="active-nav" @click="goHome"><Home :size="24" :fill="'currentColor'" />Home</button>
-      <button @click="toggleSignIn"><component :is="signedIn ? LogOut : LogIn" :size="23" />{{ signedIn ? "Sign Out" : "Sign In" }}</button>
-      <button class="nav-deposit" @click="openDeposit"><span class="wallet-circle"><Wallet :size="26" /></span>Deposit</button>
-      <button @click="modal = 'promo'"><Gift :size="24" />Promotions</button>
-      <button @click="openProfile"><UserRound :size="24" :fill="'currentColor'" />Profile</button>
-    </footer>
+    <BottomNav
+      :signed-in="signedIn"
+      @home="goHome"
+      @auth="toggleSignIn"
+      @deposit="openDeposit"
+      @promotions="modal = 'promo'"
+      @profile="openProfile"
+    />
 
     <div v-if="modal" class="modal-backdrop" @click="modal = null">
       <section class="modal-sheet" role="dialog" aria-modal="true" :aria-label="modalTitle" @click.stop>
@@ -356,10 +344,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, toRef, watch } from "vue";
+import { useSessionStore } from "./stores/session";
+import PublicHeader from "./components/PublicHeader.vue";
+import BottomNav from "./components/BottomNav.vue";
 import {
-  ChevronDown, ChevronLeft, ChevronRight, Flame, Gift, Home,
-  LogIn, LogOut, Mail, Menu, Plus, Search, Star, UserRound,
+  ChevronLeft, ChevronRight, Flame, Gift,
+  LogOut, Mail, Search, Star, UserRound,
   Volume2, Wallet, X,
 } from "lucide-vue-next";
 import banner from "./assets/banner.jpg";
@@ -433,7 +424,8 @@ const signedIn = ref(false);
 const amount = ref("1000");
 const categoryList = ref<HTMLElement | null>(null);
 const notice = ref("");
-const token = ref("");
+const session = useSessionStore();
+const token = toRef(session, "userToken");
 const user = ref<AuthUser | null>(null);
 const authMode = ref<"login" | "register">("login");
 const authUsername = ref("");

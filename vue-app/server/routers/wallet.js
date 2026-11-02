@@ -3,10 +3,10 @@ import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
-import { readDb, writeDb, toCents } from "../database.js";
-import { reserveIsValid } from "../services/wallet.js";
+import { readDb, writeDb, createWithdrawalRequest } from "../database.js";
 
 const walletRequestSchema = z.object({
   type: z.enum(["deposit", "withdrawal"]),
@@ -25,6 +25,10 @@ export function createWalletRouter(uploadDir) {
   });
   const router = express.Router();
 
+  router.post("/play", authenticate, (_req, res) => {
+    res.status(503).json({ error: "Game provider is not connected. This account will not be charged." });
+  });
+
   router.post("/request", authenticate, upload.single("proof"), validate(walletRequestSchema), (req, res) => {
     const db = readDb();
     const user = db.users.find((item) => item.id === req.user.id);
@@ -37,10 +41,9 @@ export function createWalletRouter(uploadDir) {
     if (type === "withdrawal") {
       if ((user.kycStatus || "not_submitted") !== "verified") return res.status(403).json({ error: "Complete KYC verification before requesting a withdrawal" });
       if (!paymentMethod || paymentNote.length < 6) return res.status(400).json({ error: "Valid withdrawal destination details are required" });
-      if (!reserveIsValid(user, roundedAmount, db.transactions)) return res.status(400).json({ error: "Insufficient available balance" });
     }
     const transaction = {
-      id: globalThis.crypto.randomUUID(),
+      id: randomUUID(),
       userId: user.id,
       username: user.username,
       type,
@@ -52,10 +55,8 @@ export function createWalletRouter(uploadDir) {
       proofFile: req.file ? req.file.filename : "",
       createdAt: new Date().toISOString(),
     };
-    db.transactions.unshift(transaction);
-    db.notifications ||= [];
-    db.notifications.unshift({
-      id: globalThis.crypto.randomUUID(),
+    const notification = {
+      id: randomUUID(),
       userId: user.id,
       type,
       title: `${type === "deposit" ? "Deposit" : "Withdrawal"} request submitted`,
@@ -63,8 +64,19 @@ export function createWalletRouter(uploadDir) {
       relatedId: transaction.id,
       read: false,
       createdAt: new Date().toISOString(),
-    });
-    writeDb(db);
+    };
+    if (type === "withdrawal") {
+      try {
+        createWithdrawalRequest(transaction, notification);
+      } catch (error) {
+        return res.status(400).json({ error: error instanceof Error ? error.message : "Could not reserve withdrawal" });
+      }
+    } else {
+      db.transactions.unshift(transaction);
+      db.notifications ||= [];
+      db.notifications.unshift(notification);
+      writeDb(db);
+    }
     res.status(201).json({ message: `${type === "deposit" ? "Deposit" : "Withdrawal"} request submitted`, balance: user.balance });
   });
 

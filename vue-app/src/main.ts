@@ -1,10 +1,11 @@
-import { createApp } from "vue";
-import App from "./App.vue";
-import AdminApp from "./AdminApp.vue";
+import { createApp, h } from "vue";
+import { createPinia } from "pinia";
+import { RouterView } from "vue-router";
+import { router } from "./router";
 
-const configuredAdminPath = String(import.meta.env.VITE_ADMIN_PANEL_PATH || "").trim();
-const adminPath = configuredAdminPath
-  ? (configuredAdminPath.startsWith("/") ? configuredAdminPath : `/${configuredAdminPath}`)
-  : "/admin";
-
-createApp(window.location.pathname === adminPath ? AdminApp : App).mount("#app");
+createApp({
+  render: () => h(RouterView),
+})
+  .use(createPinia())
+  .use(router)
+  .mount("#app");

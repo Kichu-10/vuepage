@@ -6,4 +6,5 @@ server/database.json.tmp
 server/database.sqlite
 server/database.sqlite-shm
 server/database.sqlite-wal
+server/backups/
 server/uploads/

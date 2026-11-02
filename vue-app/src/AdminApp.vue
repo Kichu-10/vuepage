@@ -20,27 +20,7 @@
   </main>
 
   <main v-else class="admin-shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <img src="/src/assets/brand-logo.jpg" alt="" />
-        <div><strong>B9 Game</strong><span>Admin Control</span></div>
-      </div>
-      <nav class="side-nav" aria-label="Admin navigation">
-        <button :class="{ active: tab === 'overview' }" @click="tab = 'overview'"><span>▦</span>Overview</button>
-        <button :class="{ active: tab === 'users' }" @click="tab = 'users'"><span>♙</span>Users <b>{{ stats.totalUsers }}</b></button>
-        <button :class="{ active: tab === 'kyc' }" @click="tab = 'kyc'"><span>✓</span>KYC Review <b v-if="stats.pendingKyc">{{ stats.pendingKyc }}</b></button>
-        <button :class="{ active: tab === 'transactions' }" @click="tab = 'transactions'"><span>↔</span>Transactions <b v-if="stats.pendingRequests">{{ stats.pendingRequests }}</b></button>
-        <button :class="{ active: tab === 'results' }" @click="tab = 'results'"><span>★</span>Game Results</button>
-        <button :class="{ active: tab === 'activity' }" @click="tab = 'activity'"><span>◷</span>Activity</button>
-        <button :class="{ active: tab === 'support' }" @click="tab = 'support'"><span>?</span>Support <b v-if="openTicketCount">{{ openTicketCount }}</b></button>
-        <button :class="{ active: tab === 'settings' }" @click="tab = 'settings'"><span>⚙</span>Settings</button>
-      </nav>
-      <div class="sidebar-user">
-        <div class="avatar">AD</div>
-        <div><strong>Administrator</strong><span><i></i> Online</span></div>
-        <button title="Sign out" @click="logout">↪</button>
-      </div>
-    </aside>
+    <AdminSidebar :tab="tab" :stats="stats" :open-ticket-count="openTicketCount" @select="selectTab" @logout="logout" />
 
     <section class="workspace">
       <header class="workspace-header">
@@ -219,7 +199,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, toRef } from "vue";
+import { useSessionStore } from "./stores/session";
+import AdminSidebar from "./components/AdminSidebar.vue";
 
 type Account = {
   id: string; username: string; email: string; phone: string; country: string; balance: number; status: string;
@@ -229,7 +211,8 @@ type Transaction = { id: string; username: string; type: string; amount: number;
 type AuditLog = { id: string; action: string; target: string; details: string; createdAt: string };
 type SupportTicket = { id: string; username: string; subject: string; message: string; status: string; reply: string; createdAt: string; updatedAt: string };
 
-const token = ref(localStorage.getItem("b9_admin_token") || "");
+const session = useSessionStore();
+const token = toRef(session, "adminToken");
 const signedIn = ref(Boolean(token.value));
 const username = ref("");
 const password = ref("");
@@ -287,6 +270,13 @@ const pageTitle = computed(() => ({
   support: "Support Inbox",
   settings: "Platform Settings",
 }[tab.value]));
+
+function selectTab(value: string) {
+  const allowedTabs = ["overview", "users", "kyc", "transactions", "results", "activity", "support", "settings"] as const;
+  if (allowedTabs.includes(value as (typeof allowedTabs)[number])) {
+    tab.value = value as (typeof allowedTabs)[number];
+  }
+}
 
 async function api(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {});
