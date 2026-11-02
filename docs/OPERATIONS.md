@@ -53,6 +53,8 @@ The API reads `.env.local` from `vue-app/`. Vite exposes frontend variables with
 
 Use long, unique secrets and restrict administrator access at the network layer for production. The sample values in `.env.example` are placeholders.
 
+See the [game provider setup guide](./GAME-PROVIDER-SETUP.md) for credential storage, local setup, rotation, and signature troubleshooting.
+
 ## Build and tests
 
 Run in `vue-app/`:
