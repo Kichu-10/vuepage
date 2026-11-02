@@ -14,6 +14,11 @@ import dotenv from "dotenv";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { readDb, writeDb } from "./database.js";
+import { createAuthRouter } from "./routers/auth.js";
+import { createWalletRouter } from "./routers/wallet.js";
+import { createAdminRouter } from "./routers/admin.js";
+import { backupSqlite } from "./database.js";
+import { logger } from "./config/logger.js";
 
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env.local") });
 
@@ -71,6 +76,10 @@ const upload = multer({
     callback(null, ["image/jpeg", "image/png", "application/pdf"].includes(file.mimetype));
   },
 });
+
+app.use("/api/auth", createAuthRouter());
+app.use("/api/wallet", createWalletRouter(uploadDir));
+app.use("/api/admin", createAdminRouter());
 
 function addAudit(db, adminUsername, action, target, details = "") {
   db.auditLogs ||= [];

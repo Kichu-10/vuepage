@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { randomUUID } from "node:crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const sqliteFile = path.join(__dirname, "database.sqlite");
@@ -39,6 +40,20 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS ledger_entries (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    transaction_id TEXT,
+    type TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    balance_cents INTEGER NOT NULL,
+    reference TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_ledger_user ON ledger_entries(user_id);
+  CREATE INDEX IF NOT EXISTS idx_ledger_transaction ON ledger_entries(transaction_id);
 `);
 
 function emptyDb() {
@@ -105,6 +120,67 @@ export function writeDb(source) {
         String(user.status || "active"),
         JSON.stringify(user),
       );
+    }
+
+    export { db };
+
+    export function toCents(amount) {
+      return Math.round(Number(amount) * 100);
+    }
+
+    export function fromCents(cents) {
+      return Number((Number(cents) / 100).toFixed(2));
+    }
+
+    export function reservedWithdrawalCents(userId) {
+      const row = db.prepare(`
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM transactions
+        WHERE user_id = ? AND type = 'withdrawal' AND status = 'pending'
+      `).get(userId);
+      return toCents(row.total);
+    }
+
+    export function changeBalance({ userId, amount, type, transactionId = null, reference = "" }) {
+      db.exec("BEGIN IMMEDIATE;");
+      try {
+        const user = db.prepare("SELECT id, balance, username FROM users WHERE id = ?").get(userId);
+        if (!user) throw new Error("User not found");
+        const cents = toCents(amount);
+        const nextBalanceCents = toCents(user.balance) + (type === "credit" ? cents : -cents);
+        if (nextBalanceCents < 0) throw new Error("Insufficient balance");
+        db.prepare("UPDATE users SET balance = ? WHERE id = ?").run(fromCents(nextBalanceCents), userId);
+        db.prepare(`
+          INSERT INTO ledger_entries (id, user_id, transaction_id, type, amount_cents, balance_cents, reference, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          randomUUID(),
+          userId,
+          transactionId,
+          type,
+          cents * (type === "credit" ? 1 : -1),
+          nextBalanceCents,
+          reference,
+          new Date().toISOString(),
+        );
+        db.exec("COMMIT;");
+        return fromCents(nextBalanceCents);
+      } catch (error) {
+        db.exec("ROLLBACK;");
+        throw error;
+      }
+    }
+
+    export function backupSqlite(backupDir) {
+      fs.mkdirSync(backupDir, { recursive: true });
+      db.exec("PRAGMA wal_checkpoint(PASSIVE);");
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const destination = path.join(backupDir, `database-${stamp}.sqlite`);
+      fs.copyFileSync(sqliteFile, destination);
+      const retention = Number(process.env.DB_BACKUP_RETENTION || 14);
+      const backups = fs.readdirSync(backupDir).filter((name) => /^database-.*\.sqlite$/.test(name)).sort().reverse();
+      for (const old of backups.slice(retention)) fs.unlinkSync(path.join(backupDir, old));
+      return destination;
     }
 
     const insertTransaction = db.prepare(`
