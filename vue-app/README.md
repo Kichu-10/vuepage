@@ -2,6 +2,8 @@
 
 This is the standalone Vue 3 implementation. It is separate from the React project in `.dist/frontend/pixel-to-playful-pages-35`.
 
+See the repository's [System Documentation](../SYSTEM.md), [API Reference](../docs/API.md), and [Operations Guide](../docs/OPERATIONS.md) for architecture, routes, configuration, and deployment guidance.
+
 The client uses Vue Router and Pinia. Express endpoints are organized under `server/routers`, shared wallet/database operations are in `server/services` and `server/database.js`, and SQLite data is stored in normalized tables. Existing SQLite JSON records are migrated on server startup.
 
 From the repository root, run:
