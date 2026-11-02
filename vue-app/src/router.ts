@@ -11,6 +11,11 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: adminPath, component: AdminApp },
-    { path: "/:pathMatch(.*)*", component: App },
+    { path: "/", component: App },
+    { path: "/games", component: App },
+    { path: "/promotions", component: App },
+    { path: "/wallet", component: App },
+    { path: "/account", component: App },
+    { path: "/:pathMatch(.*)*", redirect: "/" },
   ],
 });

@@ -44,7 +44,7 @@ const googleSchema = z.object({
 });
 
 function publicUser(user) {
-  const { passwordHash, ...safe } = user;
+  const { passwordHash, avatarPath, ...safe } = user;
   return safe;
 }
 

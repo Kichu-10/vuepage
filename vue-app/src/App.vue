@@ -1,40 +1,43 @@
 <template>
-  <div class="page-frame">
+  <div class="page-frame" :class="`page-${currentPage}`">
     <PublicHeader
       :logo="b9Logo"
       :balance-label="signedIn ? formatMoney(balance) : '--'"
       @open-menu="modal = 'menu'"
-      @home="goHome"
-      @deposit="openDeposit"
-      @toggle-search="searchOpen = !searchOpen"
+      @home="navigateTo('/')"
+      @deposit="navigateTo('/wallet')"
+      @toggle-search="toggleGameSearch"
     />
+    <nav class="desktop-nav" aria-label="Main navigation">
+      <button v-for="item in pageLinks" :key="item.path" :class="{ active: route.path === item.path }" @click="navigateTo(item.path)">
+        {{ item.label }}
+      </button>
+      <button v-if="!signedIn" class="desktop-auth" @click="showAuth">Sign in</button>
+      <button v-else class="desktop-auth" @click="toggleSignIn">Sign out</button>
+    </nav>
 
-    <div v-if="searchOpen" class="search-wrap">
+    <div v-if="searchOpen && currentPage === 'games'" class="search-wrap">
       <Search class="search-input-icon" :size="18" />
       <input v-model="query" autofocus placeholder="Search games..." aria-label="Search games" />
       <button class="clear-search" aria-label="Close search" @click="searchOpen = false; query = ''"><X :size="18" /></button>
     </div>
 
     <main class="content">
-      <section class="promo-frame" aria-label="Promotions">
+      <template v-if="currentPage === 'home'">
+      <section v-if="signedIn && activePromotions.length" class="promo-frame" aria-label="Member promotions">
         <div class="hero">
-          <img :src="banner" alt="B9 Game first deposit promotion" class="hero-image" />
           <div class="hero-copy">
-            <p class="hero-title"><span>{{ currentSlide.t1 }}</span> <strong>{{ currentSlide.big }}</strong></p>
-            <p class="hero-subtitle">{{ currentSlide.sub }}</p>
-            <p class="hero-amount"><small>UP TO</small>{{ currentSlide.amt }}</p>
-            <button class="claim-button" @click="openDeposit">Claim Now <span><ChevronRight :size="20" :stroke-width="3" /></span></button>
-          </div>
-          <div class="slide-dots">
-            <button
-              v-for="(_, index) in slides"
-              :key="index"
-              :aria-label="`Show promotion ${index + 1}`"
-              :class="{ active: index === slide }"
-              @click="slide = index"
-            />
+            <p class="hero-title"><span>{{ activePromotions[0]?.title }}</span></p>
+            <p class="hero-subtitle">{{ activePromotions[0]?.description }}</p>
+            <p class="hero-amount"><small>OFFER</small>{{ activePromotions[0]?.reward || "See offer terms" }}</p>
+            <button class="claim-button" @click="navigateTo('/promotions')">View offer <span><ChevronRight :size="20" :stroke-width="3" /></span></button>
           </div>
         </div>
+      </section>
+      <section v-else class="welcome-banner">
+        <div><span class="eyebrow">WELCOME TO B9 GAME</span><h1>Find your next game</h1><p>Browse games, manage your account, and view member offers after signing in.</p></div>
+        <button v-if="!signedIn" class="primary-button" @click="showAuth">Sign in</button>
+        <button v-else class="primary-button" @click="navigateTo('/games')">Browse games</button>
       </section>
       <section v-if="maintenanceMode" class="maintenance-banner" role="status">
         Scheduled maintenance is active. Transactions and support may experience delays.
@@ -72,12 +75,33 @@
         <img :src="jackpotBanner" alt="JACKPOT" class="jackpot-banner" />
         <div class="jackpot-value">{{ jackpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
       </section>
+      </template>
 
-      <section class="games-panel">
+      <template v-if="currentPage === 'games'">
+        <section v-if="maintenanceMode" class="maintenance-banner" role="status">
+          Scheduled maintenance is active. Transactions and support may experience delays.
+        </section>
+        <nav class="categories" aria-label="Game categories">
+          <button class="category-arrow" aria-label="Scroll categories left" @click="scrollCategories(-1)"><ChevronLeft :size="22" /></button>
+          <div ref="categoryList" class="category-list">
+            <button v-for="category in categoryItems" :key="category.label" class="category" :class="{ selected: category.label === selectedCategory }" @click="selectCategory(category.label)">
+              <span class="category-icon"><img :src="category.image" :alt="category.label" class="category-image" /></span>
+              <span class="category-label">{{ category.label }}</span>
+            </button>
+          </div>
+          <button class="category-arrow" aria-label="Scroll categories right" @click="scrollCategories(1)"><ChevronRight :size="22" /></button>
+        </nav>
+        <section class="jackpot" aria-label="Jackpot">
+          <img :src="jackpotBanner" alt="JACKPOT" class="jackpot-banner" />
+          <div class="jackpot-value">{{ jackpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
+        </section>
+      </template>
+
+      <section v-if="currentPage === 'home' || currentPage === 'games'" class="games-panel">
         <div class="section-heading">
           <h2><Flame class="section-flame" :size="27" :fill="'currentColor'" />{{ query ? "Results" : selectedCategory }}</h2>
-          <button class="view-all" @click="showAll = !showAll">
-            {{ showAll ? "Show Less" : "View All" }} <ChevronRight :size="17" />
+          <button v-if="currentPage === 'home'" class="view-all" @click="navigateTo('/games')">
+            View All <ChevronRight :size="17" />
           </button>
         </div>
         <p v-if="gamesLoading" class="empty-state">Loading games...</p>
@@ -111,15 +135,152 @@
           </article>
         </div>
       </section>
+
+      <section v-else-if="currentPage === 'promotions'" class="page-section">
+        <div class="page-heading">
+          <span class="eyebrow">MEMBER REWARDS</span>
+          <h1>Promotions</h1>
+          <p>Offers and eligibility details provided by the platform.</p>
+        </div>
+        <div v-if="!signedIn" class="signed-out-card">
+          <Gift :size="30" />
+          <h2>Sign in to view promotions</h2>
+          <p>Member offers are available to signed-in users and may have eligibility requirements.</p>
+          <button class="primary-button" @click="showAuth">Sign in</button>
+        </div>
+        <p v-else-if="promotionsLoading" class="empty-state">Loading offers...</p>
+        <p v-else-if="promotionsError" class="empty-state">{{ promotionsError }}</p>
+        <p v-else-if="activePromotions.length === 0" class="empty-state">There are no active offers right now.</p>
+        <div v-else class="promotion-grid">
+          <article v-for="(promotion, index) in activePromotions" :key="promotion.id" class="promotion-tile">
+            <span class="promotion-number">{{ String(index + 1).padStart(2, "0") }}</span>
+            <span v-if="promotion.reward" class="promotion-value">{{ promotion.reward }}</span>
+            <h2>{{ promotion.title }}</h2>
+            <p v-if="promotion.description">{{ promotion.description }}</p>
+            <p v-if="promotion.terms" class="promotion-terms">{{ promotion.terms }}</p>
+            <button class="primary-button" @click="askAboutPromotion(promotion)">Ask about this offer</button>
+          </article>
+        </div>
+        <aside class="responsible-play-note">
+          <strong>Responsible play</strong>
+          <p>Play responsibly: set limits and never gamble with money you cannot afford to lose. Offers are subject to the stated terms; contact support for eligibility and do not assume any bonus is credited automatically.</p>
+        </aside>
+      </section>
+
+      <section v-else-if="currentPage === 'wallet'" class="page-section">
+        <div class="page-heading">
+          <span class="eyebrow">ACCOUNT FINANCES</span>
+          <h1>Wallet</h1>
+          <p>Manage your balance, payment requests, and game funds.</p>
+        </div>
+        <div v-if="!signedIn" class="signed-out-card">
+          <Wallet :size="30" />
+          <h2>Sign in to manage your wallet</h2>
+          <p>Your balance and payment activity are available after signing in.</p>
+          <button class="primary-button" @click="showAuth">Sign in</button>
+        </div>
+        <template v-else>
+          <div class="wallet-summary-grid">
+            <article class="wallet-summary main-wallet-summary">
+              <span>Main wallet</span>
+              <strong>Rs. {{ formatMoney(balance) }}</strong>
+              <small>Available account balance</small>
+            </article>
+            <article class="wallet-summary">
+              <span>Game wallet · {{ gameWalletCurrency }}</span>
+              <strong>{{ gameWalletLoading ? "Checking..." : formatMoney(gameWalletBalance) }}</strong>
+              <small>Funds held by the game provider</small>
+              <button class="text-action" :disabled="gameWalletLoading || returningGameFunds" @click="returnGameFunds">
+                {{ returningGameFunds ? "Returning..." : "Return game funds" }}
+              </button>
+            </article>
+          </div>
+          <section class="wallet-workspace">
+            <div class="wallet-workspace-heading">
+              <div><span class="eyebrow">PAYMENTS</span><h2>Request a transaction</h2></div>
+              <div class="wallet-tabs">
+                <button :class="{ active: walletRequestType === 'deposit' }" @click="walletRequestType = 'deposit'">Deposit</button>
+                <button :class="{ active: walletRequestType === 'withdrawal' }" @click="walletRequestType = 'withdrawal'">Withdraw</button>
+              </div>
+            </div>
+            <p class="bonus-note">Submit a request for admin review and balance approval.</p>
+            <div v-if="walletRequestType === 'deposit'" class="manual-payment-details">
+              <strong>{{ paymentDetails.bankName }}</strong>
+              <p v-if="paymentDetails.accountName"><span>Account name:</span> {{ paymentDetails.accountName }}</p>
+              <p v-if="paymentDetails.accountNumber"><span>Account number:</span> {{ paymentDetails.accountNumber }}</p>
+              <p v-if="paymentDetails.iban"><span>IBAN:</span> {{ paymentDetails.iban }}</p>
+              <p v-if="paymentDetails.upiId"><span>UPI ID:</span> {{ paymentDetails.upiId }}</p>
+              <p v-if="paymentDetails.walletNumber"><span>{{ paymentDetails.walletName || "Wallet" }}:</span> {{ paymentDetails.walletNumber }}</p>
+              <small>{{ paymentDetails.instructions }}</small>
+            </div>
+            <div class="wallet-form">
+              <div class="amount-options">
+                <button v-for="preset in [500, 1000, 5000, 10000]" :key="preset" :class="{ chosen: amount === String(preset) }" @click="amount = String(preset)">{{ preset.toLocaleString() }}</button>
+              </div>
+              <input v-model="amount" class="amount-input" inputmode="numeric" placeholder="Amount (Rs.)" aria-label="Request amount" @input="amount = amount.replace(/\D/g, '')" />
+              <input v-model="paymentMethod" class="amount-input" :placeholder="walletRequestType === 'deposit' ? 'Payment method (bank, UPI, wallet)' : 'Withdrawal destination (bank, UPI, wallet)'" />
+              <input v-if="walletRequestType === 'deposit'" v-model="paymentReference" class="amount-input" placeholder="Transaction or payment reference" required />
+              <textarea v-model="paymentNote" class="manual-note" rows="3" :placeholder="walletRequestType === 'withdrawal' ? 'Account or wallet details and withdrawal instructions' : 'Optional payment note'" />
+              <label v-if="walletRequestType === 'deposit'" class="payment-proof-label">Payment receipt or screenshot<input type="file" accept="image/jpeg,image/png,application/pdf" @change="setPaymentProof" required /></label>
+              <button class="primary-button full-button" @click="submitWalletRequest">Submit {{ walletRequestType === "deposit" ? "Deposit" : "Withdrawal" }} Request</button>
+            </div>
+          </section>
+          <section class="wallet-workspace transaction-list">
+            <div class="wallet-workspace-heading">
+              <div><span class="eyebrow">ACTIVITY</span><h2>Recent transactions</h2></div>
+              <button class="text-action" @click="loadWalletTransactions">Refresh</button>
+            </div>
+            <p v-if="transactionLoading" class="empty-state">Loading transaction history...</p>
+            <p v-else-if="walletTransactions.length === 0" class="empty-state">No wallet transactions yet.</p>
+            <article v-for="transaction in walletTransactions" :key="transaction.id" class="transaction-card">
+              <div><strong>{{ transaction.type === "deposit" ? "Deposit" : "Withdrawal" }}</strong><small>{{ formatDate(transaction.createdAt) }}</small><small v-if="transaction.paymentMethod">Method: {{ transaction.paymentMethod }}</small><small v-if="transaction.paymentReference">Reference: {{ transaction.paymentReference }}</small></div>
+              <div class="transaction-result"><strong>Rs. {{ formatMoney(transaction.amount) }}</strong><span :class="transaction.status">{{ transaction.status }}</span></div>
+            </article>
+          </section>
+        </template>
+      </section>
+
+      <section v-else-if="currentPage === 'account'" class="page-section">
+        <div class="page-heading">
+          <span class="eyebrow">YOUR SPACE</span>
+          <h1>Account</h1>
+          <p>Profile, verification, saved games, and help.</p>
+        </div>
+        <template v-if="signedIn">
+          <section class="account-card">
+            <div class="account-avatar">
+              <img v-if="avatarUrl" :src="avatarUrl" alt="Profile picture" />
+              <span v-else>{{ user?.username?.slice(0, 1).toUpperCase() || "U" }}</span>
+            </div>
+            <div class="account-identity"><span>Signed in as</span><strong>{{ user?.username }}</strong><small>{{ user?.email || "Email not set" }}</small></div>
+            <button class="text-action" @click="modal = 'profile'">View profile</button>
+          </section>
+          <label class="avatar-upload-button" :class="{ uploading: avatarUploading }">
+            <UserRound :size="18" />
+            {{ avatarUploading ? "Uploading picture..." : avatarUrl ? "Change profile picture" : "Upload profile picture" }}
+            <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="avatarUploading" @change="uploadProfilePicture" />
+          </label>
+          <div class="account-action-grid">
+            <button @click="openProfile"><UserRound :size="21" /><span><strong>Profile</strong><small>Personal and account details</small></span><ChevronRight :size="18" /></button>
+            <button @click="openKyc"><ShieldCheck :size="21" /><span><strong>Identity verification</strong><small>{{ kycLabel }}</small></span><ChevronRight :size="18" /></button>
+            <button @click="showFavorites"><Star :size="21" /><span><strong>Favorite games</strong><small>{{ favoriteNames }}</small></span><ChevronRight :size="18" /></button>
+            <button @click="openInbox"><Mail :size="21" /><span><strong>Inbox</strong><small>{{ unreadCount }} unread messages</small></span><ChevronRight :size="18" /></button>
+            <button @click="modal = 'support'"><LifeBuoy :size="21" /><span><strong>Help &amp; support</strong><small>Contact support about your account</small></span><ChevronRight :size="18" /></button>
+          </div>
+          <button class="sign-out-button" @click="toggleSignIn"><LogOut :size="19" />Sign out</button>
+        </template>
+        <div v-else class="signed-out-card">
+          <UserRound :size="30" />
+          <h2>Sign in to your account</h2>
+          <p>Access your profile, verification status, saved games, and messages.</p>
+          <button class="primary-button" @click="showAuth">Sign in or create account</button>
+        </div>
+      </section>
     </main>
 
     <BottomNav
-      :signed-in="signedIn"
-      @home="goHome"
-      @auth="toggleSignIn"
-      @deposit="openDeposit"
-      @promotions="modal = 'promo'"
-      @profile="openProfile"
+      :active-page="route.path"
+      @navigate="navigateTo"
     />
 
     <div v-if="modal" class="modal-backdrop" @click="modal = null">
@@ -129,75 +290,7 @@
           <button class="close-button" aria-label="Close dialog" @click="modal = null"><X :size="22" /></button>
         </div>
 
-        <div v-if="modal === 'deposit'" class="modal-content">
-          <div class="wallet-tabs">
-            <button :class="{ active: walletRequestType === 'deposit' }" @click="walletRequestType = 'deposit'">Deposit</button>
-            <button :class="{ active: walletRequestType === 'withdrawal' }" @click="walletRequestType = 'withdrawal'">Withdraw</button>
-          </div>
-          <p class="bonus-note">Submit a request for admin review and balance approval.</p>
-          <div class="game-wallet-panel">
-            <div>
-              <strong>Game wallet</strong>
-              <small v-if="gameWalletLoading">Checking provider balance...</small>
-              <small v-else>{{ gameWalletCurrency }} {{ formatMoney(gameWalletBalance) }}</small>
-            </div>
-            <button :disabled="gameWalletLoading || returningGameFunds" @click="returnGameFunds">
-              {{ returningGameFunds ? "Returning..." : "Return game funds" }}
-            </button>
-          </div>
-          <div v-if="walletRequestType === 'deposit'" class="manual-payment-details">
-            <strong>{{ paymentDetails.bankName }}</strong>
-            <p v-if="paymentDetails.accountName"><span>Account name:</span> {{ paymentDetails.accountName }}</p>
-            <p v-if="paymentDetails.accountNumber"><span>Account number:</span> {{ paymentDetails.accountNumber }}</p>
-            <p v-if="paymentDetails.iban"><span>IBAN:</span> {{ paymentDetails.iban }}</p>
-            <p v-if="paymentDetails.upiId"><span>UPI ID:</span> {{ paymentDetails.upiId }}</p>
-            <p v-if="paymentDetails.walletNumber"><span>{{ paymentDetails.walletName || "Wallet" }}:</span> {{ paymentDetails.walletNumber }}</p>
-            <small>{{ paymentDetails.instructions }}</small>
-          </div>
-          <div class="amount-options">
-            <button
-              v-for="preset in [500, 1000, 5000, 10000]"
-              :key="preset"
-              :class="{ chosen: amount === String(preset) }"
-              @click="amount = String(preset)"
-            >{{ preset.toLocaleString() }}</button>
-          </div>
-          <input
-            v-model="amount"
-            class="amount-input"
-            inputmode="numeric"
-            placeholder="Amount (Rs.)"
-            aria-label="Deposit amount"
-            @input="amount = amount.replace(/\D/g, '')"
-          />
-          <input
-            v-model="paymentMethod"
-            class="amount-input"
-            :placeholder="walletRequestType === 'deposit' ? 'Payment method (bank, UPI, wallet)' : 'Withdrawal destination (bank, UPI, wallet)'"
-          />
-          <input
-            v-if="walletRequestType === 'deposit'"
-            v-model="paymentReference"
-            class="amount-input"
-            placeholder="Transaction or payment reference"
-            required
-          />
-          <textarea
-            v-model="paymentNote"
-            class="manual-note"
-            rows="3"
-            :placeholder="walletRequestType === 'withdrawal' ? 'Account or wallet details and withdrawal instructions' : 'Optional payment note'"
-          />
-          <label v-if="walletRequestType === 'deposit'" class="payment-proof-label">
-            Payment receipt or screenshot
-            <input type="file" accept="image/jpeg,image/png,application/pdf" @change="setPaymentProof" required />
-          </label>
-          <button class="primary-button full-button" @click="submitWalletRequest">
-            Submit {{ walletRequestType === "deposit" ? "Deposit" : "Withdrawal" }} Request
-          </button>
-        </div>
-
-        <form v-else-if="modal === 'auth'" class="modal-content auth-form" @submit.prevent="submitAuth">
+        <form v-if="modal === 'auth'" class="modal-content auth-form" @submit.prevent="submitAuth">
           <div class="wallet-tabs">
             <button type="button" :class="{ active: authMode === 'login' }" @click="authMode = 'login'">Sign In</button>
             <button type="button" :class="{ active: authMode === 'register' }" @click="authMode = 'register'">Register</button>
@@ -208,7 +301,8 @@
               <option value="IN">India</option>
               <option value="PK">Pakistan</option>
             </select>
-            <div id="google-signin-button" class="google-signin-button" />
+            <div v-if="googleClientId" id="google-signin-button" class="google-signin-button" />
+            <p v-else class="auth-configuration-note">Google Sign-In is not configured for this site.</p>
             <div class="auth-divider"><span>or sign in with username</span></div>
           </template>
           <input v-model="authUsername" autocomplete="username" placeholder="Username" aria-label="Username" required minlength="3" />
@@ -228,17 +322,17 @@
 
         <ul v-else-if="modal === 'menu'" class="menu-list">
           <li class="menu-section-label">My account</li>
-          <li><button @click="openProfile"><UserRound :size="20" />Profile &amp; account</button></li>
-          <li><button @click="openDeposit"><Wallet :size="20" />Deposit &amp; withdraw</button></li>
+          <li><button @click="navigateTo('/account')"><UserRound :size="20" />Profile &amp; account</button></li>
+          <li><button @click="navigateTo('/wallet')"><Wallet :size="20" />Deposit &amp; withdraw</button></li>
           <li><button @click="openTransactionHistory"><Mail :size="20" />Transaction history</button></li>
           <li v-if="signedIn && user?.kycStatus !== 'verified'"><button @click="openKyc"><UserRound :size="20" />KYC verification</button></li>
           <li class="menu-section-label">Discover</li>
           <li><button @click="showFavorites"><Star :size="20" />My favorites</button></li>
-          <li><button @click="modal = 'promo'"><Gift :size="20" />Promotions</button></li>
+          <li><button @click="navigateTo('/promotions')"><Gift :size="20" />Promotions</button></li>
           <li><button @click="openInbox"><Mail :size="20" />Inbox</button></li>
           <li class="menu-section-label">Game categories</li>
           <li v-for="category in categories" :key="category">
-            <button @click="selectCategory(category); modal = null"><Flame :size="20" />{{ category }}</button>
+            <button @click="selectCategory(category); navigateTo('/games')"><Flame :size="20" />{{ category }}</button>
           </li>
           <li class="menu-section-label">Support</li>
           <li><button @click="modal = 'support'"><Mail :size="20" />Help &amp; support</button></li>
@@ -288,16 +382,28 @@
         </div>
 
         <div v-else-if="modal === 'promo'" class="modal-content promo-list">
-          <article v-for="promotion in slides" :key="promotion.sub" class="promo-card">
+          <article v-for="promotion in activePromotions" :key="promotion.id" class="promo-card">
             <div>
-              <strong>{{ promotion.t1 }} {{ promotion.big }}</strong>
-              <p>{{ promotion.sub }} · up to {{ promotion.amt }}</p>
+              <strong>{{ promotion.title }}</strong>
+              <p>{{ promotion.description }} {{ promotion.reward }}</p>
             </div>
-            <button class="primary-button" @click="claimPromotion">Claim</button>
+            <button class="primary-button" @click="askAboutPromotion(promotion)">Ask support</button>
           </article>
         </div>
 
         <div v-else-if="modal === 'profile'" class="modal-content profile-info">
+          <div class="profile-picture-editor">
+            <div class="profile-avatar-preview">
+              <img v-if="avatarUrl" :src="avatarUrl" alt="Your profile picture" />
+              <span v-else>{{ user?.username?.slice(0, 1).toUpperCase() || "U" }}</span>
+            </div>
+            <label class="avatar-upload-button" :class="{ uploading: avatarUploading }">
+              <UserRound :size="18" />
+              {{ avatarUploading ? "Uploading picture..." : avatarUrl ? "Change profile picture" : "Upload profile picture" }}
+              <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="avatarUploading" @change="uploadProfilePicture" />
+            </label>
+            <small class="upload-hint">JPEG, PNG, or WebP · up to 3 MB</small>
+          </div>
           <p><strong>User:</strong> {{ user?.username || "Guest" }}</p>
           <p><strong>Balance:</strong> Rs. {{ formatMoney(balance) }}</p>
           <p><strong>Phone:</strong> {{ user?.phone || "Not set" }}</p>
@@ -359,15 +465,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, toRef, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useSessionStore } from "./stores/session";
 import PublicHeader from "./components/PublicHeader.vue";
 import BottomNav from "./components/BottomNav.vue";
 import {
-  ChevronLeft, ChevronRight, Flame, Gift,
-  LogOut, Mail, Search, Star, UserRound,
+  ChevronLeft, ChevronRight, Flame, Gift, LifeBuoy,
+  LogOut, Mail, Search, ShieldCheck, Star, UserRound,
   Volume2, Wallet, X,
 } from "lucide-vue-next";
-import banner from "./assets/banner.jpg";
 import fish from "./assets/g-fish.jpg";
 import slot from "./assets/g-slot.jpg";
 import b9Logo from "./assets/b9-logo.jpg";
@@ -379,11 +485,12 @@ import fishingCategory from "./assets/04_fishing.png";
 import inOutCategory from "./assets/05_inout.png";
 
 type GameCategory = "Popular" | "PG Slot" | "Spribe" | "Fishing" | "InOut";
-type Modal = "deposit" | "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | "transactions" | "favorites" | "support" | null;
+type Modal = "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | "transactions" | "favorites" | "support" | null;
 type AuthUser = { id: string; username: string; phone: string; email: string; country: string; kycStatus: string; role: "user" | "admin"; balance: number; status: string; createdAt: string; lastLoginAt: string | null };
 type WalletTransaction = { id: string; type: "deposit" | "withdrawal"; amount: number; status: string; createdAt: string; paymentMethod?: string; paymentReference?: string; paymentNote?: string };
 type PaymentDetails = { bankName: string; accountName: string; accountNumber: string; iban: string; upiId: string; walletName: string; walletNumber: string; instructions: string };
 type InboxMessage = { id: string; type: string; title: string; message: string; read: boolean; createdAt: string };
+type Promotion = { id: string; title: string; description: string; reward: string; terms: string; active: boolean };
 type Game = {
   id: number;
   name: string;
@@ -392,6 +499,13 @@ type Game = {
 };
 
 const categories: GameCategory[] = ["Popular", "PG Slot", "Spribe", "Fishing", "InOut"];
+const pageLinks = [
+  { path: "/", label: "Home" },
+  { path: "/games", label: "Games" },
+  { path: "/promotions", label: "Promotions" },
+  { path: "/wallet", label: "Wallet" },
+  { path: "/account", label: "Account" },
+];
 const categoryItems = [
   { label: "Popular" as const, image: popularCategory },
   { label: "PG Slot" as const, image: pgSlotCategory },
@@ -399,13 +513,6 @@ const categoryItems = [
   { label: "Fishing" as const, image: fishingCategory },
   { label: "InOut" as const, image: inOutCategory },
 ];
-const slides = [
-  { t1: "Get", big: "100%", sub: "Bonus on Your First Deposit", amt: "RS. 50,000" },
-  { t1: "Daily", big: "10%", sub: "Cashback on All Games", amt: "RS. 5,000" },
-  { t1: "Invite", big: "Friends", sub: "Earn per Referral", amt: "RS. 500" },
-  { t1: "Weekly", big: "VIP", sub: "Rewards for Members", amt: "RS. 25,000" },
-];
-
 const selectedCategory = ref<GameCategory>("Popular");
 const games = ref<Game[]>([]);
 const gamesLoading = ref(true);
@@ -413,11 +520,9 @@ const gamesError = ref("");
 const launchingGameId = ref<number | null>(null);
 const balance = ref(8891.2);
 const jackpot = ref(10799004.2);
-const slide = ref(0);
 const favorites = ref<number[]>([]);
 const query = ref("");
 const searchOpen = ref(false);
-const showAll = ref(false);
 const modal = ref<Modal>(null);
 const signedIn = ref(false);
 const amount = ref("1000");
@@ -425,7 +530,11 @@ const categoryList = ref<HTMLElement | null>(null);
 const notice = ref("");
 const session = useSessionStore();
 const token = toRef(session, "userToken");
+const route = useRoute();
+const router = useRouter();
 const user = ref<AuthUser | null>(null);
+const avatarUrl = ref("");
+const avatarUploading = ref(false);
 const authMode = ref<"login" | "register">("login");
 const authUsername = ref("");
 const authEmail = ref("");
@@ -457,18 +566,22 @@ const returningGameFunds = ref(false);
 const inboxMessages = ref<InboxMessage[]>([]);
 const unreadCount = ref(0);
 const inboxLoading = ref(false);
-const platformAnnouncement = ref("Get 100% Bonus on Your First Deposit & Start Winning!");
+const platformAnnouncement = ref("Welcome to B9 Game. Play responsibly and review applicable terms.");
 const supportSubject = ref("");
 const supportMessage = ref("");
 const supportLoading = ref(false);
 const maintenanceMode = ref(false);
-let slideTimer: ReturnType<typeof setInterval> | undefined;
+const promotions = ref<Promotion[]>([]);
+const promotionsLoading = ref(false);
+const promotionsError = ref("");
+const googleClientId = ref("");
 let inboxTimer: ReturnType<typeof setInterval> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let googleScriptPromise: Promise<void> | undefined;
 let googleInitialized = false;
 
-const currentSlide = computed(() => slides[slide.value] ?? slides[0]!);
+const currentPage = computed(() => route.path.slice(1) || "home");
+const activePromotions = computed(() => promotions.value.filter((promotion) => promotion.active));
 const kycLabel = computed(() => {
   if (user.value?.kycStatus === "verified") return "Verified";
   if (user.value?.kycStatus === "pending") return "Pending review";
@@ -487,7 +600,7 @@ const visibleGames = computed(() => {
       if (selectedCategory.value === "Fishing") return provider.includes("fish");
       return provider === "in" || provider.includes("inout");
     });
-  return showAll.value ? filtered : filtered.slice(0, 6);
+  return currentPage.value === "home" ? filtered.slice(0, 6) : filtered;
 });
 const modalTitle = computed(() => {
   if (modal.value === "promo") return "Promotions";
@@ -506,14 +619,32 @@ const favoriteNames = computed(() => {
   return names.length ? names.join(", ") : "None yet";
 });
 
-watch([modal, authMode], () => {
-  if (modal.value === "auth" && authMode.value === "login") {
-    window.setTimeout(() => { void googleLogin(); }, 0);
+watch([modal, authMode, googleClientId], () => {
+  if (modal.value === "auth" && authMode.value === "login" && googleClientId.value) {
+    window.setTimeout(() => {
+      void googleLogin().catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not load Google Sign-In"));
+    }, 0);
   }
 });
 
+watch(() => [route.path, signedIn.value] as const, ([path, isSignedIn]) => {
+  if (isSignedIn) void loadPromotions();
+  else promotions.value = [];
+  if (path === "/wallet" && isSignedIn) {
+    void refreshGameWallet();
+    void loadWalletTransactions();
+  }
+});
+
+watch(signedIn, (isSignedIn) => {
+  if (!isSignedIn) {
+    clearAvatarUrl();
+    return;
+  }
+  void loadProfilePicture().catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not load profile picture"));
+});
+
 onMounted(async () => {
-  slideTimer = setInterval(() => { slide.value = (slide.value + 1) % slides.length; }, 4000);
   void loadGames();
   token.value = localStorage.getItem("b9_token") || "";
   try {
@@ -525,6 +656,7 @@ onMounted(async () => {
     const settings = await fetch("/api/platform/settings").then((response) => response.json());
     if (settings.announcement) platformAnnouncement.value = settings.announcement;
     maintenanceMode.value = Boolean(settings.maintenanceMode);
+    googleClientId.value = settings.googleClientId || "";
   } catch {
     // Keep the built-in announcement when platform settings are unavailable.
   }
@@ -534,9 +666,9 @@ onMounted(async () => {
   }
 });
 onUnmounted(() => {
-  if (slideTimer) clearInterval(slideTimer);
   if (noticeTimer) clearTimeout(noticeTimer);
   if (inboxTimer) clearInterval(inboxTimer);
+  clearAvatarUrl();
 });
 
 async function api(path: string, options: RequestInit = {}): Promise<any> {
@@ -560,6 +692,64 @@ async function restoreSession(): Promise<void> {
     token.value = "";
     signedIn.value = false;
     user.value = null;
+  }
+}
+
+function clearAvatarUrl(): void {
+  if (avatarUrl.value) URL.revokeObjectURL(avatarUrl.value);
+  avatarUrl.value = "";
+}
+
+async function loadProfilePicture(): Promise<void> {
+  const sessionToken = token.value;
+  if (!sessionToken) return;
+  const response = await fetch("/api/auth/profile/avatar", {
+    headers: { Authorization: `Bearer ${sessionToken}` },
+  });
+  if (token.value !== sessionToken) return;
+  if (response.status === 404) {
+    clearAvatarUrl();
+    return;
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Could not load profile picture");
+  }
+  const nextUrl = URL.createObjectURL(await response.blob());
+  if (token.value !== sessionToken) {
+    URL.revokeObjectURL(nextUrl);
+    return;
+  }
+  clearAvatarUrl();
+  avatarUrl.value = nextUrl;
+}
+
+async function uploadProfilePicture(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    notify("Choose a JPEG, PNG, or WebP image");
+    input.value = "";
+    return;
+  }
+  if (file.size > 3 * 1024 * 1024) {
+    notify("Profile pictures must be 3 MB or smaller");
+    input.value = "";
+    return;
+  }
+  const form = new FormData();
+  form.append("avatar", file);
+  avatarUploading.value = true;
+  try {
+    await api("/api/auth/profile/avatar", { method: "POST", body: form });
+    await loadProfilePicture();
+    notify("Profile picture updated");
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "Could not update profile picture");
+  } finally {
+    avatarUploading.value = false;
+    input.value = "";
   }
 }
 
@@ -656,11 +846,34 @@ async function loadGames(): Promise<void> {
     gamesLoading.value = false;
   }
 }
-function openDeposit(): void {
-  if (!requireSignIn()) {
-    modal.value = "deposit";
-    void refreshGameWallet();
+async function loadPromotions(): Promise<void> {
+  if (!signedIn.value) return;
+  promotionsLoading.value = true;
+  promotionsError.value = "";
+  try {
+    const data = await api("/api/promotions");
+    promotions.value = data.promotions;
+  } catch (error) {
+    promotions.value = [];
+    promotionsError.value = error instanceof Error ? error.message : "Could not load promotions";
+  } finally {
+    promotionsLoading.value = false;
   }
+}
+function navigateTo(path: string): void {
+  modal.value = null;
+  if (path !== "/games") searchOpen.value = false;
+  void router.push(path);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function toggleGameSearch(): void {
+  if (route.path !== "/games") {
+    navigateTo("/games");
+    searchOpen.value = true;
+    return;
+  }
+  searchOpen.value = !searchOpen.value;
+  if (!searchOpen.value) query.value = "";
 }
 async function refreshGameWallet(): Promise<void> {
   if (!signedIn.value) return;
@@ -694,7 +907,6 @@ async function returnGameFunds(): Promise<void> {
 function selectCategory(category: GameCategory): void {
   selectedCategory.value = category;
   query.value = "";
-  showAll.value = false;
 }
 function scrollCategories(direction: number): void {
   categoryList.value?.scrollBy({ left: direction * 120, behavior: "smooth" });
@@ -774,12 +986,14 @@ async function submitWalletRequest(): Promise<void> {
     notify(error instanceof Error ? error.message : "Request failed");
   }
 }
-function claimPromotion(): void {
+function askAboutPromotion(promotion: Promotion): void {
   if (requireSignIn()) return;
-  modal.value = "deposit";
+  supportSubject.value = `Promotion question: ${promotion.title}`.slice(0, 100);
+  supportMessage.value = `Please confirm the eligibility and terms for the "${promotion.title}" offer.`;
+  modal.value = "support";
 }
 async function googleLogin(): Promise<void> {
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+  const clientId = googleClientId.value;
   if (!clientId) {
     notify("Google Sign-In is not configured");
     return;
@@ -948,6 +1162,10 @@ function openProfile(): void {
 async function openTransactionHistory(): Promise<void> {
   if (requireSignIn()) return;
   modal.value = "transactions";
+  await loadWalletTransactions();
+}
+async function loadWalletTransactions(): Promise<void> {
+  if (!signedIn.value) return;
   transactionLoading.value = true;
   try {
     const data = await api("/api/wallet/transactions");
@@ -966,9 +1184,9 @@ function openKyc(): void {
 function showFavorites(): void {
   modal.value = "favorites";
 }
-function goHome(): void {
-  modal.value = null;
-  window.scrollTo({ top: 0, behavior: "smooth" });
+function showAuth(): void {
+  authMode.value = "login";
+  modal.value = "auth";
 }
 </script>
 
@@ -994,6 +1212,7 @@ button { cursor: pointer; }
   background: #f6faf6;
   box-shadow: 0 0 36px rgb(34 91 51 / 8%);
 }
+.desktop-nav { display: none; }
 .topbar {
   display: flex;
   height: 62px;
@@ -1066,20 +1285,20 @@ button { cursor: pointer; }
 .clear-search { display: grid; place-items: center; padding: 2px; border: 0; background: none; }
 .content { display: flex; flex-direction: column; gap: 10px; padding: 9px 11px 16px; }
 .promo-frame { padding: 8px; border-radius: 28px; background: #fff; box-shadow: 0 3px 12px rgb(32 98 51 / 5%); }
-.hero { position: relative; aspect-ratio: 2.28 / 1; overflow: hidden; border-radius: 20px; color: #fff; background: #08733d; }
+.hero { position: relative; min-height: 190px; overflow: hidden; border-radius: 20px; color: #fff; background: radial-gradient(circle at 85% 15%, rgb(91 206 115 / 50%), transparent 36%), linear-gradient(120deg, #075e35, #128647 68%, #20a85b); }
 .hero::after { position: absolute; inset: 0; content: ""; background: linear-gradient(90deg, rgb(3 83 39 / 38%) 0%, transparent 58%); pointer-events: none; }
-.hero-image { width: 100%; height: 100%; object-fit: cover; object-position: center; }
-.hero-copy { position: absolute; z-index: 1; inset: 0 auto 0 0; display: flex; max-width: 59%; flex-direction: column; justify-content: center; padding: 2px 0 2px 11%; text-shadow: 0 1px 5px rgb(0 56 24 / 25%); }
+.hero-copy { position: relative; z-index: 1; display: flex; min-height: 190px; max-width: 780px; flex-direction: column; align-items: flex-start; justify-content: center; padding: 20px clamp(18px, 6vw, 54px); text-shadow: 0 1px 5px rgb(0 56 24 / 25%); }
 .hero-title { display: flex; align-items: baseline; gap: 7px; margin: 0; font-size: clamp(15px, 4.6vw, 23px); font-weight: 750; line-height: 1; }
 .hero-title strong { font-size: clamp(28px, 9.5vw, 50px); font-weight: 900; letter-spacing: -1.5px; }
-.hero-subtitle { max-width: 240px; margin: 3px 0 0; font-size: clamp(11px, 3.8vw, 17px); font-weight: 750; line-height: 1.15; }
-.hero-amount { display: flex; flex-direction: column; margin: 4px 0 0; color: #ffe66d; font-size: clamp(21px, 7vw, 37px); font-weight: 900; line-height: .96; white-space: nowrap; }
+.hero-subtitle { max-width: 440px; margin: 7px 0 0; font-size: clamp(12px, 3.8vw, 17px); font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+.hero-amount { display: flex; flex-direction: column; margin: 10px 0 0; color: #ffe66d; font-size: clamp(17px, 5vw, 28px); font-weight: 900; line-height: 1.15; overflow-wrap: anywhere; }
 .hero-amount small { margin-bottom: 2px; color: #acd59c; font-size: 9px; font-weight: 750; }
 .claim-button { display: flex; width: fit-content; align-items: center; gap: 6px; margin-top: 6px; padding: 5px 7px 5px 12px; border: 0; border-radius: 99px; color: white; background: #28bf70; font-size: clamp(11px, 3.6vw, 15px); font-weight: 650; text-shadow: none; }
 .claim-button > span { display: grid; width: 21px; height: 21px; place-items: center; border-radius: 50%; color: #229e5a; background: white; }
-.slide-dots { position: absolute; z-index: 2; bottom: 8px; left: 50%; display: flex; gap: 5px; transform: translateX(-50%); }
-.slide-dots button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 9px; background: rgb(255 255 255 / 55%); }
-.slide-dots button.active { background: white; }
+.welcome-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: clamp(18px, 5vw, 28px); border: 1px solid #dfece1; border-radius: 20px; background: linear-gradient(135deg, #edf8ef, #fff); }
+.welcome-banner h1 { margin: 6px 0; color: #284534; font-size: clamp(21px, 6vw, 32px); }
+.welcome-banner p { max-width: 560px; margin: 0; color: #728078; font-size: 13px; line-height: 1.5; }
+.welcome-banner .primary-button { flex: 0 0 auto; }
 .announcement { display: flex; min-height: 43px; align-items: center; gap: 10px; padding: 5px 7px 5px 14px; border-radius: 14px; color: #426d51; background: #e7f4e9; }
 .announcement-volume { flex: 0 0 auto; color: #36a564; fill: #36a564; }
 .announcement p { flex: 1; overflow: hidden; margin: 0; font-size: clamp(11px, 3.4vw, 14px); white-space: nowrap; text-overflow: ellipsis; }
@@ -1197,6 +1416,64 @@ button { cursor: pointer; }
 .payment-proof-label { display: flex; flex-direction: column; gap: 6px; color: #536358; font-size: 12px; }
 .payment-proof-label input { min-height: 42px; padding: 7px; border: 1px dashed #d5ded6; border-radius: 10px; }
 .primary-button { border: 0; border-radius: 999px; padding: 8px 14px; color: white; background: #23ae5e; font-weight: 650; }
+.page-section { display: flex; flex-direction: column; gap: 14px; padding: 8px 2px 18px; }
+.page-heading { padding: 12px 4px 4px; }
+.page-heading h1 { margin: 4px 0 6px; color: #233d2d; font-size: clamp(26px, 7vw, 36px); letter-spacing: -.04em; }
+.page-heading p { max-width: 560px; margin: 0; color: #748078; font-size: 14px; line-height: 1.5; }
+.eyebrow { color: #23944f; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.promotion-grid { display: grid; gap: 12px; }
+.promotion-tile { position: relative; display: flex; min-height: 200px; flex-direction: column; align-items: flex-start; overflow: hidden; padding: 20px; border: 1px solid #dfece1; border-radius: 18px; background: linear-gradient(140deg, #eff9ee, #fff 70%); }
+.promotion-number { position: absolute; top: 10px; right: 15px; color: #e2eee3; font-size: 54px; font-weight: 900; line-height: 1; }
+.promotion-value { position: relative; z-index: 1; color: #22934b; font-size: 28px; font-weight: 900; }
+.promotion-tile h2 { position: relative; z-index: 1; margin: 10px 0 4px; color: #284534; font-size: 18px; }
+.promotion-tile p { margin: 0 0 8px; color: #728078; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.promotion-amount { margin-bottom: 14px; color: #ad7432; font-size: 12px; font-weight: 750; }
+.promotion-tile .promotion-terms { padding-top: 8px; border-top: 1px solid #e1ece2; font-size: 11px; }
+.promotion-tile .primary-button { margin-top: auto; }
+.responsible-play-note { padding: 14px; border: 1px solid #e6e9d8; border-radius: 13px; color: #596449; background: #fbf9ed; }
+.responsible-play-note strong { font-size: 13px; }
+.responsible-play-note p { margin: 6px 0 0; font-size: 11px; line-height: 1.6; }
+.auth-configuration-note { margin: 0; padding: 10px; border-radius: 9px; color: #758179; background: #f3f6f3; font-size: 11px; text-align: center; }
+.wallet-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wallet-summary { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 7px; padding: 15px; border: 1px solid #e1ebe2; border-radius: 16px; background: white; }
+.wallet-summary > span { color: #738078; font-size: 12px; font-weight: 650; }
+.wallet-summary > strong { color: #203d2a; font-size: clamp(18px, 5vw, 25px); overflow-wrap: anywhere; }
+.wallet-summary > small { color: #8a968e; font-size: 11px; }
+.main-wallet-summary { color: white; border: 0; background: linear-gradient(135deg, #148b48, #24b362); }
+.main-wallet-summary > span, .main-wallet-summary > strong, .main-wallet-summary > small { color: white; }
+.wallet-workspace { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid #e1ebe2; border-radius: 16px; background: white; }
+.wallet-workspace-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wallet-workspace-heading h2 { margin: 3px 0 0; color: #2b4534; font-size: 17px; }
+.wallet-workspace .wallet-tabs { min-width: 150px; }
+.wallet-workspace .wallet-tabs button { padding: 8px; }
+.bonus-note { margin: 0; color: #758179; font-size: 12px; line-height: 1.45; }
+.wallet-form { display: grid; gap: 9px; }
+.text-action { padding: 5px 0; border: 0; color: #228b4b; background: none; font-size: 12px; font-weight: 750; text-align: left; }
+.text-action:disabled { opacity: .6; }
+.signed-out-card { display: flex; min-height: 240px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 26px; border: 1px solid #e1ebe2; border-radius: 18px; background: white; text-align: center; }
+.signed-out-card > svg { color: #259752; }
+.signed-out-card h2 { margin: 2px 0 0; color: #2b4534; font-size: 19px; }
+.signed-out-card p { max-width: 350px; margin: 0 0 6px; color: #748078; font-size: 13px; line-height: 1.5; }
+.transaction-list { max-height: none; }
+.account-card { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid #e1ebe2; border-radius: 16px; background: white; }
+.account-avatar, .profile-avatar-preview { display: grid; overflow: hidden; flex: 0 0 auto; place-items: center; border-radius: 50%; color: white; background: #24a85a; font-weight: 800; }
+.account-avatar { width: 48px; height: 48px; font-size: 21px; }
+.account-avatar img, .profile-avatar-preview img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-upload-button { display: flex; width: fit-content; min-height: 42px; align-items: center; justify-content: center; gap: 8px; padding: 8px 13px; border: 1px solid #d5e7d8; border-radius: 11px; color: #248b4b; background: white; font-size: 12px; font-weight: 700; cursor: pointer; }
+.avatar-upload-button.uploading { opacity: .65; cursor: wait; }
+.avatar-upload-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+.profile-picture-editor { display: flex; flex-direction: column; align-items: center; gap: 9px; padding-bottom: 12px; border-bottom: 1px solid #e8eee8; }
+.profile-avatar-preview { width: 88px; height: 88px; font-size: 36px; }
+.upload-hint { color: #87948b; font-size: 11px; }
+.account-identity { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+.account-identity > span, .account-identity > small { overflow: hidden; color: #758179; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.account-identity > strong { overflow: hidden; color: #2b4534; text-overflow: ellipsis; }
+.account-action-grid { display: grid; gap: 8px; }
+.account-action-grid > button { display: flex; min-height: 66px; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid #e1ebe2; border-radius: 13px; color: #299251; background: white; text-align: left; }
+.account-action-grid > button > span { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+.account-action-grid strong { color: #2b4534; font-size: 13px; }
+.account-action-grid small { overflow: hidden; color: #78847c; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.sign-out-button { display: flex; min-height: 44px; align-items: center; justify-content: center; gap: 8px; border: 1px solid #eddddd; border-radius: 12px; color: #a74d4d; background: #fff9f9; font-weight: 700; }
 .full-button { width: 100%; padding: 12px; }
 .menu-list, .message-list { margin: 0; padding: 0; list-style: none; }
 .menu-list li + li, .message-list li + li { margin-top: 5px; }
@@ -1269,13 +1546,21 @@ button { cursor: pointer; }
 .kyc-form label input { padding: 7px; border-style: dashed; }
 @media (max-width: 479px) {
   .amount-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .game-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .game-card { border-radius: 13px; }
+  .game-art-title { font-size: clamp(16px, 5vw, 22px); }
+  .game-name { font-size: 12px; }
   .verification-row { grid-template-columns: 1fr 1fr; }
   .verification-row input { grid-column: 1 / -1; }
   .modal-sheet { max-height: calc(100dvh - 12px); }
   .transaction-card { align-items: flex-start; }
+  .account-card { gap: 9px; padding: 12px; }
+  .account-card .text-action { flex: 0 0 auto; }
+  .avatar-upload-button { max-width: 100%; }
   .inbox-message-heading { flex-wrap: wrap; }
   .promo-card { align-items: flex-start; }
-  .bottom-nav button { min-width: 44px; }
+  .bottom-nav { padding-right: max(8px, env(safe-area-inset-right)); padding-left: max(8px, env(safe-area-inset-left)); }
+  .bottom-nav button { min-width: 48px; min-height: 48px; }
 }
 @media (min-width: 480px) {
   .page-frame { min-height: 100vh; }
@@ -1287,6 +1572,10 @@ button { cursor: pointer; }
     margin: 16px auto 0;
     border-radius: 24px 24px 0 0;
   }
+  .desktop-nav { display: flex; min-height: 54px; align-items: center; gap: 5px; padding: 0 24px; border-bottom: 1px solid #e8eee8; background: #fff; }
+  .desktop-nav button { padding: 9px 13px; border: 0; border-radius: 9px; color: #64736a; background: transparent; font-size: 13px; font-weight: 650; }
+  .desktop-nav button.active { color: #168446; background: #eaf6ed; }
+  .desktop-nav .desktop-auth { margin-left: auto; color: #fff; background: #22a85a; }
   .topbar { height: 72px; padding: 8px 24px 12px; border-radius: 24px 24px 0 0; }
   .brand-emblem { width: 44px; height: 44px; flex-basis: 44px; }
   .brand-wordmark { font-size: 21px; }
@@ -1295,8 +1584,8 @@ button { cursor: pointer; }
   .search-wrap { padding-right: 24px; padding-left: 24px; }
   .content { gap: 14px; padding: 14px 18px 24px; }
   .promo-frame { padding: 10px; }
-  .hero { aspect-ratio: 3.25 / 1; max-height: 390px; }
-  .hero-copy { max-width: 45%; padding-left: 9%; }
+  .hero { min-height: 220px; }
+  .hero-copy { min-height: 220px; }
   .categories { min-height: 104px; padding-right: 18px; padding-left: 18px; }
   .category { max-width: 130px; }
   .category-image { width: 50px; height: 50px; }
@@ -1305,7 +1594,11 @@ button { cursor: pointer; }
   .games-panel { padding: 16px 14px 14px; }
   .modal-backdrop { align-items: center; }
   .modal-sheet { max-height: 88vh; border-radius: 24px; }
-  .bottom-nav { width: min(1180px, calc(100% - 32px)); max-width: 1180px; border-radius: 20px 20px 0 0; }
+  .bottom-nav { display: none; }
+  .page-frame { padding-bottom: 20px; }
+  .promotion-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wallet-summary-grid { gap: 14px; }
+  .page-section { gap: 18px; padding-right: 4px; padding-left: 4px; }
 }
 @media (min-width: 1100px) {
   .game-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
@@ -1326,6 +1619,15 @@ button { cursor: pointer; }
   .category { min-width: 46px; font-size: 11px; }
   .jackpot { border-radius: 14px; }
   .jackpot-value { bottom: 24%; font-size: 12px; }
-  .game-grid { gap: 6px; }
+  .game-grid { gap: 8px; }
+  .welcome-banner { align-items: flex-start; flex-direction: column; }
+  .wallet-summary-grid { grid-template-columns: 1fr; }
+  .wallet-workspace-heading { align-items: flex-start; flex-direction: column; }
+  .wallet-workspace .wallet-tabs { width: 100%; }
+}
+@media (max-width: 350px) {
+  .public-brand { width: 40px; min-width: 40px; flex-basis: 40px; }
+  .brand-wordmark { display: none; }
+  .deposit-button { display: none; }
 }
 </style>

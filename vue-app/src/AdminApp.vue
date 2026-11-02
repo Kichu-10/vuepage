@@ -183,16 +183,35 @@
     </section>
 
     <section v-if="tab === 'settings'" class="panel settings-panel">
-      <div class="panel-heading"><div><h2>Platform Settings</h2><p>Public announcement and support configuration</p></div></div>
+      <div class="panel-heading"><div><h2>Platform Settings</h2><p>Public announcement, support, and member offers</p></div></div>
       <form class="settings-form" @submit.prevent="savePlatformSettings">
         <label>Public announcement<textarea v-model="platformSettings.announcement" rows="3" placeholder="Announcement shown on the homepage"></textarea></label>
         <label>Support email<input v-model="platformSettings.supportEmail" type="email" placeholder="support@example.com" /></label>
         <label>Support phone<input v-model="platformSettings.supportPhone" placeholder="+91..." /></label>
         <label>Support hours<input v-model="platformSettings.supportHours" placeholder="24/7" /></label>
         <label class="switch-row"><span><strong>Maintenance mode</strong><small>Display maintenance notice without disabling the API</small></span><input v-model="platformSettings.maintenanceMode" type="checkbox" /></label>
+        <section class="promotion-admin-section">
+          <div class="promotion-admin-heading">
+            <div><h3>Member promotions</h3><p>Only active offers are visible to signed-in users. State eligibility and terms clearly.</p></div>
+            <button type="button" class="secondary" :disabled="platformSettings.promotions.length >= 20" @click="addPromotion">Add offer</button>
+          </div>
+          <article v-for="(promotion, index) in platformSettings.promotions" :key="promotion.id" class="promotion-admin-card">
+            <div class="promotion-admin-card-heading">
+              <strong>Offer {{ index + 1 }}</strong>
+              <button type="button" class="reject" @click="removePromotion(index)">Remove</button>
+            </div>
+            <label>Title<input v-model="promotion.title" maxlength="100" required placeholder="Offer title" /></label>
+            <label>Description<textarea v-model="promotion.description" maxlength="500" rows="2" placeholder="Describe the offer"></textarea></label>
+            <label>Reward description<input v-model="promotion.reward" maxlength="160" placeholder="Describe reward (avoid guarantees)" /></label>
+            <label>Eligibility and terms<textarea v-model="promotion.terms" maxlength="1000" rows="3" placeholder="Eligibility, restrictions, expiry, and how to ask about the offer"></textarea></label>
+            <label class="switch-row"><span><strong>Offer active</strong><small>Show this offer to signed-in users</small></span><input v-model="promotion.active" type="checkbox" /></label>
+          </article>
+          <p v-if="platformSettings.promotions.length === 0" class="empty">No offers configured. Add an offer to show it to members.</p>
+        </section>
         <button class="primary-button" type="submit">Save platform settings</button>
       </form>
-      <small class="form-message">{{ settingsMessage }}</small>
+      <small class="form-message" role="status">{{ settingsMessage }}</small>
+      <p class="google-config-note">Google Sign-In is configured through the server environment variable <code>GOOGLE_CLIENT_ID</code>. Set the matching web client ID in your Google Cloud OAuth client and add your production domain to its authorized JavaScript origins. Restart the API after changing the value.</p>
     </section>
     </section>
   </main>
@@ -210,6 +229,7 @@ type Account = {
 type Transaction = { id: string; username: string; type: string; amount: number; status: string; paymentMethod?: string; paymentReference?: string; paymentNote?: string; proofFile?: string };
 type AuditLog = { id: string; action: string; target: string; details: string; createdAt: string };
 type SupportTicket = { id: string; username: string; subject: string; message: string; status: string; reply: string; createdAt: string; updatedAt: string };
+type Promotion = { id: string; title: string; description: string; reward: string; terms: string; active: boolean };
 
 const session = useSessionStore();
 const token = toRef(session, "adminToken");
@@ -239,7 +259,7 @@ const resultMessage = ref("");
 const lastRefreshTime = ref("just now");
 const supportTickets = ref<SupportTicket[]>([]);
 const openTicketCount = computed(() => supportTickets.value.filter((ticket) => ticket.status !== "resolved").length);
-const platformSettings = ref({ announcement: "", maintenanceMode: false, supportEmail: "", supportPhone: "", supportHours: "24/7" });
+const platformSettings = ref({ announcement: "", maintenanceMode: false, supportEmail: "", supportPhone: "", supportHours: "24/7", promotions: [] as Promotion[] });
 const settingsMessage = ref("");
 let refreshTimer: number | undefined;
 const kycUsers = computed(() => users.value.filter((account) => account.kycStatus !== "not_submitted"));
@@ -276,6 +296,22 @@ function selectTab(value: string) {
   if (allowedTabs.includes(value as (typeof allowedTabs)[number])) {
     tab.value = value as (typeof allowedTabs)[number];
   }
+}
+
+function addPromotion() {
+  if (platformSettings.value.promotions.length >= 20) return;
+  platformSettings.value.promotions.push({
+    id: `promotion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: "",
+    description: "",
+    reward: "",
+    terms: "",
+    active: true,
+  });
+}
+
+function removePromotion(index: number) {
+  platformSettings.value.promotions.splice(index, 1);
 }
 
 async function api(path: string, options: RequestInit = {}) {
@@ -658,6 +694,20 @@ body { margin: 0; }
 .settings-form input, .settings-form textarea { width: 100%; border: 1px solid #e1e8e4; border-radius: 9px; background: white; padding: 10px; font-family: inherit; }
 .settings-form input { height: 42px; }
 .settings-form textarea { resize: vertical; }
+.promotion-admin-section { display: grid; grid-column: 1 / -1; gap: 10px; padding-top: 14px; border-top: 1px solid #e8eeea; }
+.promotion-admin-heading, .promotion-admin-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.promotion-admin-heading h3 { margin: 0; color: #344a3c; font-size: 15px; }
+.promotion-admin-heading p { max-width: 520px; margin: 4px 0 0; color: #87948b; font-size: 11px; line-height: 1.5; }
+.promotion-admin-card { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; border: 1px solid #e7ede9; border-radius: 12px; background: #fbfdfb; }
+.promotion-admin-card-heading, .promotion-admin-card label:first-of-type, .promotion-admin-card label:nth-of-type(4), .promotion-admin-card .switch-row { grid-column: 1 / -1; }
+.promotion-admin-card-heading { align-items: center; }
+.promotion-admin-card label { display: flex; flex-direction: column; gap: 6px; color: #5a685f; font-size: 11px; font-weight: 700; }
+.promotion-admin-card input, .promotion-admin-card textarea { width: 100%; padding: 9px; border: 1px solid #e1e8e4; border-radius: 8px; background: white; font: inherit; }
+.promotion-admin-card input { min-height: 38px; }
+.promotion-admin-card textarea { resize: vertical; }
+.promotion-admin-card .switch-row { flex-direction: row; }
+.google-config-note { margin: 12px 0 0; color: #77847c; font-size: 11px; line-height: 1.6; }
+.google-config-note code { overflow-wrap: anywhere; }
 .switch-row { flex-direction: row !important; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid #edf1ef; border-radius: 10px; }
 .switch-row span { display: flex; flex-direction: column; }
 .switch-row small { margin-top: 3px; color: #98a49e; font-weight: 500; }
@@ -717,6 +767,9 @@ body { margin: 0; }
   .ticket-row select, .ticket-row button { width: 100%; }
   .settings-form { grid-template-columns: 1fr; }
   .settings-form label, .settings-form label:first-child, .settings-form .switch-row, .settings-form .primary-button { grid-column: 1; }
+  .promotion-admin-section { grid-column: 1; }
+  .promotion-admin-card { grid-template-columns: 1fr; }
+  .promotion-admin-card-heading, .promotion-admin-card label:first-of-type, .promotion-admin-card label:nth-of-type(4), .promotion-admin-card .switch-row { grid-column: 1; }
   .quick-actions button { flex: 1; min-width: 120px; }
 }
 @media (max-width: 420px) {

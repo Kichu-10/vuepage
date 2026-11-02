@@ -20,6 +20,14 @@ const settingsSchema = z.object({
   supportEmail: z.string().trim().email().or(z.literal("")).default(""),
   supportPhone: z.string().trim().max(40).default(""),
   supportHours: z.string().trim().max(100).default(""),
+  promotions: z.array(z.object({
+    id: z.string().trim().min(1).max(80),
+    title: z.string().trim().min(1).max(100),
+    description: z.string().trim().max(500).default(""),
+    reward: z.string().trim().max(160).default(""),
+    terms: z.string().trim().max(1000).default(""),
+    active: z.boolean().default(true),
+  })).max(20).default([]),
 });
 const gameResultSchema = z.object({
   userId: z.string().min(1),
@@ -45,7 +53,7 @@ function addNotification(db, userId, type, title, message, relatedId = "") {
 }
 
 function publicUser(user) {
-  const { passwordHash, ...safeUser } = user;
+  const { passwordHash, avatarPath, ...safeUser } = user;
   return safeUser;
 }
 
@@ -77,7 +85,7 @@ export function createAdminRouter() {
     const db = readDb();
     db.platformSettings = req.body;
     const admin = db.users.find((item) => item.id === req.user.id);
-    addAudit(db, admin?.username || "admin", "SETTINGS_UPDATED", "Platform settings", "Announcement and support settings updated");
+    addAudit(db, admin?.username || "admin", "SETTINGS_UPDATED", "Platform settings", "Announcement, support, and promotion settings updated");
     writeDb(db);
     res.json({ settings: db.platformSettings });
   });

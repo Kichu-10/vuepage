@@ -24,6 +24,8 @@ const { createAuthRouter, createAdminAuthRouter } = await import("../server/rout
 const { createWalletRouter } = await import("../server/routers/wallet.js");
 const { createAdminRouter } = await import("../server/routers/admin.js");
 const { createGamesRouter } = await import("../server/routers/games.js");
+const { createPromotionsRouter } = await import("../server/routers/promotions.js");
+const { createProfileRouter } = await import("../server/routers/profile.js");
 const { signGameProviderParameters } = await import("../server/services/game-provider.js");
 
 const app = express();
@@ -31,6 +33,8 @@ app.use(express.json());
 app.use("/api/auth", createAuthRouter());
 app.use("/api/wallet", createWalletRouter(path.join(tempDir, "uploads")));
 app.use("/api/games", createGamesRouter());
+app.use("/api/promotions", createPromotionsRouter());
+app.use("/api/auth", createProfileRouter(path.join(tempDir, "uploads")));
 app.use("/api/admin", createAdminAuthRouter());
 app.use("/api/admin", createAdminRouter());
 
@@ -152,6 +156,60 @@ test("admin endpoints reject anonymous and regular-user requests", async () => {
     .set("Authorization", `Bearer ${tokenFor(account)}`)
     .send({ status: "approved" })
     .expect(403);
+});
+
+test("promotions are available only to signed-in users and admin settings control visibility", async () => {
+  const memberHeaders = { Authorization: `Bearer ${tokenFor(account)}` };
+  const adminHeaders = { Authorization: `Bearer ${tokenFor(admin)}` };
+  await request(app).get("/api/promotions").expect(401);
+
+  await request(app).patch("/api/admin/settings").set(adminHeaders).send({
+    announcement: "",
+    maintenanceMode: false,
+    supportEmail: "",
+    supportPhone: "",
+    supportHours: "24/7",
+    promotions: [
+      { id: "welcome", title: "Welcome offer", description: "For eligible members", reward: "See terms", terms: "One per account", active: true },
+      { id: "paused", title: "Paused offer", active: false },
+    ],
+  }).expect(200);
+
+  const response = await request(app).get("/api/promotions").set(memberHeaders).expect(200);
+  assert.equal(response.body.promotions.length, 1);
+  assert.equal(response.body.promotions[0].id, "welcome");
+  assert.equal(database.readDb().platformSettings.promotions.length, 2);
+});
+
+test("profile pictures are authenticated, validated, and not exposed as server paths", async () => {
+  const headers = { Authorization: `Bearer ${tokenFor(account)}` };
+  await request(app).get("/api/auth/profile/avatar").expect(401);
+  const profile = await request(app).get("/api/auth/me").set(headers).expect(200);
+  assert.equal("avatarPath" in profile.body.user, false);
+
+  const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]);
+  await request(app)
+    .post("/api/auth/profile/avatar")
+    .set(headers)
+    .attach("avatar", png, { filename: "profile.png", contentType: "image/png" })
+    .expect(200);
+  assert.match(database.readDb().users.find((user) => user.id === account.id).avatarPath, /^avatar-[\w-]+\.png$/);
+
+  const image = await request(app).get("/api/auth/profile/avatar").set(headers).expect(200);
+  assert.match(image.headers["content-type"], /image\/png/);
+  assert.deepEqual(image.body, png);
+
+  await request(app)
+    .post("/api/auth/profile/avatar")
+    .set(headers)
+    .attach("avatar", Buffer.from("<svg/>"), { filename: "profile.svg", contentType: "image/svg+xml" })
+    .expect(400);
+
+  await request(app)
+    .post("/api/auth/profile/avatar")
+    .set(headers)
+    .attach("avatar", Buffer.alloc(3 * 1024 * 1024 + 1, 0), { filename: "large.png", contentType: "image/png" })
+    .expect(400);
 });
 
 test("admin login works through the split router without weakening admin guards", async () => {

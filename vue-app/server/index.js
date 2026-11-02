@@ -16,6 +16,8 @@ import { createAdminRouter } from "./routers/admin.js";
 import { createKycRouter } from "./routers/kyc.js";
 import { createSupportRouter } from "./routers/support.js";
 import { createGamesRouter } from "./routers/games.js";
+import { createPromotionsRouter } from "./routers/promotions.js";
+import { createProfileRouter } from "./routers/profile.js";
 import { backupSqlite } from "./database.js";
 import { logger } from "./config/logger.js";
 
@@ -66,22 +68,25 @@ app.get("/api/platform/settings", (_req, res) => {
   const db = readDb();
   const settings = db.platformSettings || {};
   res.json({
-    announcement: settings.announcement || "Get 100% Bonus on Your First Deposit & Start Winning!",
+    announcement: settings.announcement || "Welcome to B9 Game. Play responsibly and review applicable terms.",
     maintenanceMode: Boolean(settings.maintenanceMode),
     supportEmail: settings.supportEmail || "",
     supportPhone: settings.supportPhone || "",
     supportHours: settings.supportHours || "24/7",
+    googleClientId: process.env.GOOGLE_CLIENT_ID || "",
   });
 });
 const uploadDir = path.join(__dirname, "uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
 app.use("/api/auth", createAuthRouter());
+app.use("/api/auth", createProfileRouter(uploadDir));
 app.use("/api/wallet", createWalletRouter(uploadDir));
 app.use("/api/auth", createKycRouter(uploadDir));
 app.use("/api/admin", createAdminAuthRouter());
 app.use("/api/admin", createAdminRouter());
 app.use("/api", createSupportRouter());
 app.use("/api/games", createGamesRouter());
+app.use("/api/promotions", createPromotionsRouter());
 
 function auth(req, res, next) {
   const header = req.headers.authorization || "";

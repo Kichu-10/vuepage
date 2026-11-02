@@ -25,7 +25,7 @@ db.exec(`
     kyc_status TEXT NOT NULL DEFAULT 'not_submitted', full_name TEXT NOT NULL DEFAULT '',
     date_of_birth TEXT NOT NULL DEFAULT '', document_type TEXT NOT NULL DEFAULT '',
     document_number TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '',
-    google_id TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '',
+    google_id TEXT NOT NULL DEFAULT '', avatar_path TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '',
     last_login_at TEXT, kyc_reviewed_at TEXT, kyc_review_note TEXT NOT NULL DEFAULT '',
     failed_admin_attempts INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0
   );
@@ -82,7 +82,8 @@ db.exec(`
     maintenance_mode INTEGER NOT NULL DEFAULT 0,
     support_email TEXT NOT NULL DEFAULT '',
     support_phone TEXT NOT NULL DEFAULT '',
-    support_hours TEXT NOT NULL DEFAULT ''
+    support_hours TEXT NOT NULL DEFAULT '',
+    promotions TEXT NOT NULL DEFAULT '[]'
   );
   CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS ledger_entries (
@@ -107,6 +108,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_game_wallet_transfers_user ON game_wallet_transfers(user_id);
   CREATE INDEX IF NOT EXISTS idx_game_wallet_transfers_status ON game_wallet_transfers(status);
 `);
+const userColumns = db.prepare("PRAGMA table_info(users)").all().map((column) => column.name);
+if (!userColumns.includes("avatar_path")) {
+  db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT NOT NULL DEFAULT '';");
+}
+const platformSettingColumns = db.prepare("PRAGMA table_info(platform_settings)").all().map((column) => column.name);
+if (!platformSettingColumns.includes("promotions")) {
+  db.exec("ALTER TABLE platform_settings ADD COLUMN promotions TEXT NOT NULL DEFAULT '[]';");
+}
 const gamePlayerColumns = db.prepare("PRAGMA table_info(game_players)").all().map((column) => column.name);
 if (!gamePlayerColumns.includes("provider_created")) {
   db.exec("ALTER TABLE game_players ADD COLUMN provider_created INTEGER NOT NULL DEFAULT 0;");
@@ -135,7 +144,7 @@ function rowUser(row) {
     emailVerified: Boolean(row.email_verified), phoneVerified: Boolean(row.phone_verified),
     kycStatus: row.kyc_status, fullName: row.full_name, dateOfBirth: row.date_of_birth,
     documentType: row.document_type, documentNumber: row.document_number, address: row.address,
-    googleId: row.google_id, createdAt: row.created_at, lastLoginAt: row.last_login_at,
+    googleId: row.google_id, avatarPath: row.avatar_path, createdAt: row.created_at, lastLoginAt: row.last_login_at,
     kycReviewedAt: row.kyc_reviewed_at, kycReviewNote: row.kyc_review_note,
     failedAdminAttempts: row.failed_admin_attempts, lockedUntil: row.locked_until, kycDocuments: {},
   };
@@ -193,6 +202,7 @@ export function readDb() {
       supportEmail: settings.support_email,
       supportPhone: settings.support_phone,
       supportHours: settings.support_hours,
+      promotions: JSON.parse(settings.promotions || "[]"),
     };
   }
   for (const row of db.prepare("SELECT * FROM kyc_documents").all()) {
@@ -215,8 +225,8 @@ export function writeDb(source) {
     const insertUser = db.prepare(`
       INSERT INTO users (id, username, phone, email, country, password_hash, role, balance_cents, status,
         email_verified, phone_verified, kyc_status, full_name, date_of_birth, document_type, document_number,
-        address, google_id, created_at, last_login_at, kyc_reviewed_at, kyc_review_note, failed_admin_attempts, locked_until)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        address, google_id, avatar_path, created_at, last_login_at, kyc_reviewed_at, kyc_review_note, failed_admin_attempts, locked_until)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertKycDocument = db.prepare("INSERT INTO kyc_documents (user_id, kind, file_path) VALUES (?, ?, ?)");
     for (const user of source.users || []) {
@@ -226,7 +236,7 @@ export function writeDb(source) {
         String(user.status || "active"), bool(user.emailVerified), bool(user.phoneVerified),
         String(user.kycStatus || "not_submitted"), String(user.fullName || ""), String(user.dateOfBirth || ""),
         String(user.documentType || ""), String(user.documentNumber || ""), String(user.address || ""),
-        String(user.googleId || ""), String(user.createdAt || ""), user.lastLoginAt || null,
+        String(user.googleId || ""), String(user.avatarPath || ""), String(user.createdAt || ""), user.lastLoginAt || null,
         user.kycReviewedAt || null, String(user.kycReviewNote || ""), Number(user.failedAdminAttempts || 0),
         Number(user.lockedUntil || 0),
       );
@@ -285,14 +295,15 @@ export function writeDb(source) {
     }
     const settings = source.platformSettings || {};
     db.prepare(`
-      INSERT INTO platform_settings (id, announcement, maintenance_mode, support_email, support_phone, support_hours)
-      VALUES (1, ?, ?, ?, ?, ?)
+      INSERT INTO platform_settings (id, announcement, maintenance_mode, support_email, support_phone, support_hours, promotions)
+      VALUES (1, ?, ?, ?, ?, ?, ?)
     `).run(
       String(settings.announcement || ""),
       bool(settings.maintenanceMode),
       String(settings.supportEmail || ""),
       String(settings.supportPhone || ""),
       String(settings.supportHours || ""),
+      JSON.stringify(settings.promotions || []),
     );
     db.exec("COMMIT;");
   } catch (error) {

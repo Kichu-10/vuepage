@@ -9,6 +9,7 @@ All routes are served by the Express API. During local development, Vite proxies
 | `GET` | `/api/health` | Public | Health response (`{ "ok": true }`) |
 | `GET` | `/api/payment/details` | Public | Configured manual deposit destinations and instructions |
 | `GET` | `/api/platform/settings` | Public | Public announcement, maintenance, and support details |
+| `GET` | `/api/promotions` | User JWT | Active promotions for the signed-in user |
 
 ## Authentication and identity
 
@@ -20,9 +21,11 @@ All routes are served by the Express API. During local development, Vite proxies
 | `POST` | `/api/auth/otp/send` | Public | Send an email or SMS verification code |
 | `POST` | `/api/auth/otp/verify` | Public | Verify an email or phone code |
 | `GET` | `/api/auth/me` | User JWT | Return the current active user |
+| `GET` | `/api/auth/profile/avatar` | User JWT | Retrieve the current user's profile picture |
+| `POST` | `/api/auth/profile/avatar` | User JWT | Upload or replace a JPEG, PNG, or WebP profile picture (maximum 3 MB; multipart field `avatar`) |
 | `POST` | `/api/admin/auth/login` | Public, rate limited | Administrator login |
 
-Email/SMS verification delivery requires the corresponding SMTP or Twilio environment variables. Google sign-in requires `GOOGLE_CLIENT_ID`.
+Email/SMS verification delivery requires the corresponding SMTP or Twilio environment variables. Google sign-in requires `GOOGLE_CLIENT_ID`; the server exposes the matching public client ID to the browser configuration endpoint.
 
 ## Wallet and KYC
 

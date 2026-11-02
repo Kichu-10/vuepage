@@ -26,7 +26,7 @@ npm run server
 
 Vite runs the frontend at its local development URL and proxies `/api` requests to `http://127.0.0.1:3001`. Update `.env.local` with local credentials and any integrations you use. Do not commit `.env.local` or production secrets.
 
-The API reads `.env.local` from `vue-app/`. Vite exposes frontend variables with the `VITE_` prefix. `VITE_ADMIN_PANEL_PATH` configures the admin panel's browser route; it is not an authorization control.
+The API reads `.env.local` from `vue-app/`. `VITE_ADMIN_PANEL_PATH` configures the admin panel's browser route; it is not an authorization control.
 
 ## Configuration
 
@@ -39,7 +39,7 @@ The API reads `.env.local` from `vue-app/`. Vite exposes frontend variables with
 | `ADMIN_ALLOWED_IPS` | Optional comma-separated administrator IP allowlist; empty means no IP restriction |
 | `SQLITE_PATH` | Optional SQLite database path; defaults to `server/database.sqlite` |
 | `VITE_ADMIN_PANEL_PATH` | Optional frontend route for the admin panel |
-| `VITE_GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_ID` | Frontend and server Google OAuth client IDs |
+| `GOOGLE_CLIENT_ID` | Google OAuth web client ID; used for server-side credential verification and provided to the sign-in button |
 | `SENTRY_DSN` | Optional Sentry error monitoring |
 | `DB_BACKUP_INTERVAL_MS` | Backup interval in milliseconds; defaults to 24 hours |
 | `DB_BACKUP_RETENTION` | Number of local backup snapshots to retain; defaults to 14 |
@@ -52,6 +52,10 @@ The API reads `.env.local` from `vue-app/`. Vite exposes frontend variables with
 | `GAME_CURRENCY_IN`, `GAME_CURRENCY_PK` | Provider currency codes for Indian and Pakistani accounts; default `INR` and `PKR` |
 
 Use long, unique secrets and restrict administrator access at the network layer for production. The sample values in `.env.example` are placeholders.
+
+To enable Google Sign-In, create a Google OAuth **Web application** client, set `GOOGLE_CLIENT_ID` to its client ID in `vue-app/.env.local`, and add each development/production site origin to the OAuth client's authorized JavaScript origins. Keep `GOOGLE_CLIENT_ID` the same for the API verifier and browser button; restart the API after changing it. The client ID is public configuration, not a secret. The OAuth flow currently asks the user to select India or Pakistan before continuing.
+
+Promotions are managed in the administrator's **Platform Settings**. Only active offers are returned to authenticated users; include eligibility and complete terms in each offer. The app does not automatically grant promotional credits.
 
 See the [game provider setup guide](./GAME-PROVIDER-SETUP.md) for credential storage, local setup, rotation, and signature troubleshooting.
 

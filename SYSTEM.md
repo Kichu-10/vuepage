@@ -74,7 +74,7 @@ Money is stored as integer cents to avoid floating-point arithmetic. The databas
 6. Completed outbound game-wallet transfers credit the main wallet and ledger in a single transaction, using the provider transaction ID to prevent duplicate credits.
 6. Pending withdrawals are excluded from the balance available to games, and game bets cannot spend reserved funds.
 
-The provider's legacy API requires MD5 request signatures with a merchant secret and salt. Secrets are server-only configuration; callbacks are verified using constant-time comparison, and outbound provider calls require HTTPS.
+The provider API requires MD5 request signatures with a merchant secret and salt. Signing credentials are server-only configuration, and outbound provider calls require HTTPS.
 
 On startup, the database layer creates or updates the relational schema and migrates recognized legacy SQLite JSON records. A legacy `server/database.json`, when present, is also used as an import source. Keep a verified backup before deploying schema changes.
 
@@ -86,6 +86,32 @@ On startup, the database layer creates or updates the relational schema and migr
 - The admin panel URL can be customized with `VITE_ADMIN_PANEL_PATH`; hiding the URL is not a substitute for authentication.
 - Auth and admin-login endpoints have separate rate limits.
 - Production startup requires a strong `JWT_SECRET` (at least 32 characters) and `ADMIN_PASSWORD`.
+
+### Admin access and credential handling
+
+- In local development, open `http://localhost:5173/admin`. The route defaults to `/admin`; `VITE_ADMIN_PANEL_PATH` can configure a different route.
+- Sign in with the username and password configured as `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `vue-app/.env.local` (local development) or the server's protected environment (deployment). The server requires these settings and syncs them to the administrator account at startup.
+- The username is the admin login name, not a separate API ID. There is no permanent admin API token to copy or share.
+- After successful sign-in, the server returns an admin JWT. It expires after 8 hours and the browser stores it for the admin session. User login tokens are separate and expire after 7 days.
+- `JWT_SECRET` is the server-only key used to sign and verify JWTs; it is not the admin password or a login token. Rotating it invalidates existing sessions.
+- If an admin password is lost, set a new strong `ADMIN_PASSWORD` in the protected environment and restart the API.
+
+Credential reference (values are intentionally not published):
+
+| Credential or setting | Purpose | Where it is configured |
+| --- | --- | --- |
+| `ADMIN_USERNAME` | Administrator sign-in name; not a provider ID | Server `.env.local` or deployment secret store |
+| `ADMIN_PASSWORD` | Administrator sign-in password | Server `.env.local` or deployment secret store; keep the actual value in a password manager |
+| `VITE_ADMIN_PANEL_PATH` | Browser route for the admin UI; not a password or access token | Frontend environment/build configuration |
+| Admin JWT | Short-lived bearer token issued at admin login; 8-hour lifetime | Returned by `/api/admin/auth/login` and stored by the admin browser session; never share or publish |
+| User JWT | User-session bearer token; 7-day lifetime | Returned by user login/registration; separate from the admin JWT |
+| `JWT_SECRET` | Server signing key used to issue and verify JWTs | Server-only `.env.local` or deployment secret store; changing it invalidates current JWTs |
+| Merchant dashboard account/password | Sign-in for the provider's merchant website; separate from app admin and API credentials | Provider dashboard; use a password manager, never application configuration |
+| `GAME_API_BASE_URL` | Provider API endpoint | Server `.env.local` or deployment configuration |
+| `GAME_OPERATOR_ID` | Provider API operator identifier; not the dashboard password | Server `.env.local` or deployment configuration |
+| `GAME_SECRET`, `GAME_SALT` | Paired provider API signing secrets | Server-only `.env.local` or deployment secret store |
+
+Use placeholders in public documentation and `.env.example`, never live values. Do not put passwords, JWTs, provider secrets, or salts in this document, source control, browser code, logs, or screenshots. For local setup, merge the required values into the ignored `vue-app/.env.local` without replacing unrelated settings. See the [Game Provider Setup guide](./docs/GAME-PROVIDER-SETUP.md) for provider configuration and error `1004` troubleshooting.
 
 ## Uploads
 
@@ -113,4 +139,5 @@ GitHub Actions runs `npm ci`, `npm test`, and `npm run build` on pushes and pull
 
 - [API Reference](./docs/API.md)
 - [Operations Guide](./docs/OPERATIONS.md)
+- [Game Provider Credential Setup](./docs/GAME-PROVIDER-SETUP.md)
 - [Vue app README](./vue-app/README.md)
