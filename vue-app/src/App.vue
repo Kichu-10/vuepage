@@ -1195,6 +1195,16 @@ button { cursor: pointer; }
 .kyc-note { margin: 0; padding: 9px; border-radius: 9px; color: #267c36; background: #e5f3e3; font-size: 12px; }
 .kyc-form label { display: flex; flex-direction: column; gap: 5px; color: #536358; font-size: 12px; }
 .kyc-form label input { padding: 7px; border-style: dashed; }
+@media (max-width: 479px) {
+  .amount-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .verification-row { grid-template-columns: 1fr 1fr; }
+  .verification-row input { grid-column: 1 / -1; }
+  .modal-sheet { max-height: calc(100dvh - 12px); }
+  .transaction-card { align-items: flex-start; }
+  .inbox-message-heading { flex-wrap: wrap; }
+  .promo-card { align-items: flex-start; }
+  .bottom-nav button { min-width: 44px; }
+}
 @media (min-width: 480px) {
   .page-frame { min-height: 100vh; }
 }
@@ -1231,6 +1241,7 @@ button { cursor: pointer; }
 @media (max-width: 370px) {
   .topbar { gap: 4px; padding-right: 8px; padding-left: 8px; }
   .menu-button { width: 23px; }
+  .public-brand { width: 74px; min-width: 74px; flex-basis: 74px; }
   .brand-emblem { width: 34px; height: 34px; flex-basis: 34px; }
   .brand-wordmark { font-size: 14px; }
   .header-actions { gap: 4px; }

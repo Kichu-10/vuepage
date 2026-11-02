@@ -707,5 +707,35 @@ body { margin: 0; }
   .stat-card strong { font-size: 18px; }
   .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .transaction-toolbar { grid-template-columns: 1fr !important; }
+  .workspace { padding: 0 12px calc(84px + env(safe-area-inset-bottom)); }
+  .workspace-header { height: 72px; margin-bottom: 0; }
+  .workspace-header h1 { font-size: 18px; }
+  .workspace-header > div:first-child > span { font-size: 8px; }
+  .header-actions { gap: 5px; }
+  .header-actions .live-status { padding: 0 7px; }
+  .panel { padding: 12px; }
+  .toolbar { grid-template-columns: 1fr !important; }
+  .toolbar input, .toolbar select { width: 100%; min-width: 0; }
+  .row, .kyc-row { width: 100%; align-items: stretch; }
+  .row > div, .kyc-row > div { width: 100%; flex-basis: auto; }
+  .row .actions, .kyc-row .actions, .row button, .kyc-row button { flex: 1; }
+  .manual-details, .documents { width: 100%; min-width: 100%; }
+  .documents { flex-wrap: wrap; }
+  .documents button { flex: 1; }
+  .activity-row { align-items: flex-start; }
+  .ticket-row { grid-template-columns: 1fr; }
+  .ticket-row select, .ticket-row button { width: 100%; }
+  .settings-form { grid-template-columns: 1fr; }
+  .settings-form label, .settings-form label:first-child, .settings-form .switch-row, .settings-form .primary-button { grid-column: 1; }
+  .quick-actions button { flex: 1; min-width: 120px; }
+}
+@media (max-width: 420px) {
+  .stats-grid { grid-template-columns: 1fr; }
+  .overview-grid { grid-template-columns: 1fr; }
+  .stat-card { min-height: 92px; align-items: center; }
+  .stat-card strong { font-size: 17px; }
+  .login-card { padding: 22px 16px; }
+  .login-heading { align-items: flex-start; }
+  .login-heading h1 { font-size: 21px; }
 }
 </style>
