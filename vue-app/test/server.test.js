@@ -19,6 +19,7 @@ process.env.HUIDU_AES_KEY = "0123456789abcdef0123456789abcdef";
 process.env.HUIDU_PLAYER_PREFIX = "h2f9cc";
 process.env.GAME_CURRENCY_IN = "INR";
 process.env.GAME_CURRENCY_PK = "PKR";
+process.env.GAME_CURRENCY_NP = "NPR";
 
 const database = await import("../server/database.js");
 const { createAuthRouter, createAdminAuthRouter } = await import("../server/routers/auth.js");
@@ -27,7 +28,7 @@ const { createAdminRouter } = await import("../server/routers/admin.js");
 const { createGamesRouter } = await import("../server/routers/games.js");
 const { createPromotionsRouter } = await import("../server/routers/promotions.js");
 const { createProfileRouter } = await import("../server/routers/profile.js");
-const { decryptHuiduPayload, encryptHuiduPayload } = await import("../server/services/game-provider.js");
+const { decryptHuiduPayload, displayCurrency, encryptHuiduPayload } = await import("../server/services/game-provider.js");
 const testAesKey = process.env.HUIDU_AES_KEY;
 
 const app = express();
@@ -43,6 +44,7 @@ app.use("/api/admin", createAdminRouter(path.join(tempDir, "uploads")));
 const account = {
   id: "user-1",
   username: "testuser",
+  country: "IN",
   passwordHash: "unused",
   role: "user",
   balance: 0,
@@ -315,6 +317,26 @@ test("HUIDU uses AES-256-ECB with base64 and PKCS padding", () => {
   const plaintext = JSON.stringify({ agency_uid: "test-agency", timestamp: 1711524622000 });
   const ciphertext = encryptHuiduPayload(plaintext, testAesKey);
   assert.equal(decryptHuiduPayload(ciphertext, testAesKey), plaintext);
+});
+
+test("INR and NPR display as rupees while PKR keeps its currency code", () => {
+  assert.equal(displayCurrency("INR"), "Rs.");
+  assert.equal(displayCurrency("NPR"), "Rs.");
+  assert.equal(displayCurrency("PKR"), "PKR");
+});
+
+test("game wallet currency follows the signed-in user's country", async () => {
+  for (const [country, currency] of [["IN", "INR"], ["PK", "PKR"], ["NP", "NPR"]]) {
+    const countryAccount = { ...account, country };
+    resetDatabase({ users: [countryAccount, admin] });
+
+    const wallet = await request(app)
+      .get("/api/games/wallet")
+      .set("Authorization", `Bearer ${tokenFor(countryAccount)}`)
+      .expect(200);
+
+    assert.deepEqual(wallet.body, { currency, balance: 0 });
+  }
 });
 
 test.skip("obsolete seamless game catalog and launch test", async () => {

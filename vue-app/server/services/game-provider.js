@@ -62,9 +62,15 @@ export function currencyForCountry(country) {
     ? process.env.GAME_CURRENCY_IN || "INR"
     : country === "PK"
       ? process.env.GAME_CURRENCY_PK || "PKR"
-      : "";
+      : country === "NP"
+        ? process.env.GAME_CURRENCY_NP || "NPR"
+        : "";
   if (!/^[A-Z]{3}$/.test(currency)) throw new GameProviderError("No game currency is configured for this account", 409);
   return currency;
+}
+
+export function displayCurrency(currency) {
+  return currency === "INR" || currency === "NPR" ? "Rs." : currency;
 }
 
 export function huiduPlayerPrefix() {

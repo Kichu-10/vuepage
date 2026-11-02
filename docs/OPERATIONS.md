@@ -50,7 +50,9 @@ The API reads `.env.local` from `vue-app/`. `VITE_ADMIN_PANEL_PATH` configures t
 | `HUIDU_AGENCY_UID` | HUIDU agency UID |
 | `HUIDU_AES_KEY` | HUIDU 32-byte AES key; server-side only |
 | `HUIDU_PLAYER_PREFIX` | 2–8 character prefix for new provider player IDs |
-| `GAME_CURRENCY_IN`, `GAME_CURRENCY_PK` | Provider currency codes for Indian and Pakistani accounts; default `INR` and `PKR` |
+| `GAME_CURRENCY_IN`, `GAME_CURRENCY_PK`, `GAME_CURRENCY_NP` | Provider currency codes for Indian, Pakistani, and Nepalese accounts; default `INR`, `PKR`, and `NPR` |
+
+Account country selects the currency mapping: India (`IN`) uses INR, Pakistan (`PK`) uses PKR, and existing Nepal (`NP`) accounts use NPR. New registration and Google Sign-In country selection currently offer India and Pakistan. In the customer interface INR and NPR display as `Rs.` while PKR displays as `PKR`; the game-provider API always receives the configured currency code. If a provider account uses different currency codes, set the corresponding environment variables and confirm those codes are enabled with HUIDU.
 
 Use long, unique secrets and restrict administrator access at the network layer for production. The sample values in `.env.example` are placeholders.
 
@@ -98,7 +100,7 @@ Test restore procedures periodically in a separate environment. Do not restore a
 - Configure the intended Google, email, SMS, payment, and Sentry integrations.
 - Configure `HUIDU_SERVER_URL`, `HUIDU_AGENCY_UID`, `HUIDU_AES_KEY`, and `HUIDU_PLAYER_PREFIX` in the server environment; never put the AES key or agency UID in a `VITE_` variable or browser code.
 - The game integration uses HUIDU's transfer-wallet API, so provider callbacks are not required. Confirm the configured API URL is the provider's HTTPS API endpoint.
-- Confirm the provider account has both INR and PKR enabled before opening games to users in India and Pakistan.
+- Confirm the provider account has INR and PKR enabled before opening games to users in India and Pakistan. Enable NPR only if Nepal accounts are intentionally supported.
 - Use only test-provider credentials for local integration checks. Rotate any credentials shared in screenshots or chats before deployment.
 - Verify the provider's licensing and local age/KYC requirements before enabling real-money games.
 - Use persistent storage and a separate protected destination for off-host backups.

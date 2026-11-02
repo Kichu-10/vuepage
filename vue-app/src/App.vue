@@ -2,7 +2,7 @@
   <div class="page-frame" :class="`page-${currentPage}`">
     <PublicHeader
       :logo="b9Logo"
-      :balance-label="signedIn ? formatMoney(balance) : '--'"
+      :balance-label="signedIn ? `${currencyLabel} ${formatMoney(balance)}` : '--'"
       @open-menu="modal = 'menu'"
       @home="navigateTo('/')"
       @deposit="navigateTo('/wallet')"
@@ -219,12 +219,12 @@
           <div class="wallet-summary-grid">
             <article class="wallet-summary main-wallet-summary">
               <span>Main wallet</span>
-              <strong>Rs. {{ formatMoney(balance) }}</strong>
+              <strong>{{ currencyLabel }} {{ formatMoney(balance) }}</strong>
               <small>Available account balance</small>
             </article>
             <article class="wallet-summary">
-              <span>Game wallet · {{ gameWalletCurrency }}</span>
-              <strong>{{ gameWalletLoading ? "Checking..." : formatMoney(gameWalletBalance) }}</strong>
+              <span>Game wallet · {{ gameWalletDisplayCurrency }}</span>
+              <strong>{{ gameWalletLoading ? "Checking..." : `${gameWalletDisplayCurrency} ${formatMoney(gameWalletBalance)}` }}</strong>
               <small>Funds held by the game provider</small>
               <button class="text-action" :disabled="gameWalletLoading || returningGameFunds" @click="returnGameFunds">
                 {{ returningGameFunds ? "Returning..." : "Return game funds" }}
@@ -253,7 +253,7 @@
               <div class="amount-options">
                 <button v-for="preset in [500, 1000, 5000, 10000]" :key="preset" :class="{ chosen: amount === String(preset) }" @click="amount = String(preset)">{{ preset.toLocaleString() }}</button>
               </div>
-              <input v-model="amount" class="amount-input" inputmode="numeric" placeholder="Amount (Rs.)" aria-label="Request amount" @input="amount = amount.replace(/\D/g, '')" />
+              <input v-model="amount" class="amount-input" inputmode="numeric" :placeholder="`Amount (${currencyLabel})`" :aria-label="`Request amount in ${currencyLabel}`" @input="amount = amount.replace(/\D/g, '')" />
               <input v-model="paymentMethod" class="amount-input" :placeholder="walletRequestType === 'deposit' ? 'Payment method (bank, UPI, wallet)' : 'Withdrawal destination (bank, UPI, wallet)'" />
               <input v-if="walletRequestType === 'deposit'" v-model="paymentReference" class="amount-input" placeholder="Transaction or payment reference" required />
               <textarea v-model="paymentNote" class="manual-note" rows="3" :placeholder="walletRequestType === 'withdrawal' ? 'Account or wallet details and withdrawal instructions' : 'Optional payment note'" />
@@ -270,7 +270,7 @@
             <p v-else-if="walletTransactions.length === 0" class="empty-state">No wallet transactions yet.</p>
             <article v-for="transaction in walletTransactions" :key="transaction.id" class="transaction-card">
               <div><strong>{{ transaction.type === "deposit" ? "Deposit" : "Withdrawal" }}</strong><small>{{ formatDate(transaction.createdAt) }}</small><small v-if="transaction.paymentMethod">Method: {{ transaction.paymentMethod }}</small><small v-if="transaction.paymentReference">Reference: {{ transaction.paymentReference }}</small></div>
-              <div class="transaction-result"><strong>Rs. {{ formatMoney(transaction.amount) }}</strong><span :class="transaction.status">{{ transaction.status }}</span></div>
+              <div class="transaction-result"><strong>{{ currencyLabel }} {{ formatMoney(transaction.amount) }}</strong><span :class="transaction.status">{{ transaction.status }}</span></div>
             </article>
           </section>
         </template>
@@ -379,7 +379,7 @@
               <small v-if="transaction.paymentReference">Reference: {{ transaction.paymentReference }}</small>
             </div>
             <div class="transaction-result">
-              <strong>Rs. {{ formatMoney(transaction.amount) }}</strong>
+              <strong>{{ currencyLabel }} {{ formatMoney(transaction.amount) }}</strong>
               <span :class="transaction.status">{{ transaction.status }}</span>
             </div>
           </article>
@@ -434,10 +434,10 @@
             <small class="upload-hint">JPEG, PNG, or WebP · up to 3 MB</small>
           </div>
           <p><strong>User:</strong> {{ user?.username || "Guest" }}</p>
-          <p><strong>Balance:</strong> Rs. {{ formatMoney(balance) }}</p>
+          <p><strong>Balance:</strong> {{ currencyLabel }} {{ formatMoney(balance) }}</p>
           <p><strong>Phone:</strong> {{ user?.phone || "Not set" }}</p>
           <p><strong>Email:</strong> {{ user?.email || "Not set" }}</p>
-          <p><strong>Country:</strong> {{ user?.country === "PK" ? "Pakistan" : user?.country === "IN" ? "India" : "Not set" }}</p>
+          <p><strong>Country:</strong> {{ user?.country === "PK" ? "Pakistan" : user?.country === "IN" ? "India" : user?.country === "NP" ? "Nepal" : "Not set" }}</p>
           <p><strong>KYC:</strong> {{ kycLabel }}</p>
           <p><strong>Account:</strong> {{ user?.status || "Unknown" }}</p>
           <p><strong>Favorites:</strong> {{ favoriteNames }}</p>
@@ -565,6 +565,14 @@ const token = toRef(session, "userToken");
 const route = useRoute();
 const router = useRouter();
 const user = ref<AuthUser | null>(null);
+const currencyCode = computed(() => {
+  if (user.value?.country === "IN") return "INR";
+  if (user.value?.country === "PK") return "PKR";
+  if (user.value?.country === "NP") return "NPR";
+  return "";
+});
+const currencyLabel = computed(() => displayCurrency(currencyCode.value));
+const gameWalletDisplayCurrency = computed(() => displayCurrency(gameWalletCurrency.value || currencyCode.value));
 const avatarUrl = ref("");
 const displayedAvatarUrl = computed(() => avatarUrl.value || user.value?.googlePictureUrl || "");
 const avatarLoading = ref(false);
@@ -594,7 +602,7 @@ const paymentDetails = ref<PaymentDetails>({
   bankName: "", accountName: "", accountNumber: "", iban: "", upiId: "", walletName: "", walletNumber: "", instructions: "",
 });
 const gameWalletBalance = ref(0);
-const gameWalletCurrency = ref("INR");
+const gameWalletCurrency = ref("");
 const gameWalletLoading = ref(false);
 const returningGameFunds = ref(false);
 const inboxMessages = ref<InboxMessage[]>([]);
@@ -845,6 +853,9 @@ async function openInbox(): Promise<void> {
 function formatMoney(value: number): string {
   return value.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 }
+function displayCurrency(currency: string): string {
+  return currency === "INR" || currency === "NPR" ? "Rs." : currency;
+}
 function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "Unknown date" : date.toLocaleString();
@@ -939,7 +950,7 @@ async function refreshGameWallet(): Promise<void> {
   try {
     const data = await api("/api/games/wallet");
     gameWalletBalance.value = Number(data.balance || 0);
-    gameWalletCurrency.value = data.currency || "INR";
+    gameWalletCurrency.value = data.currency || currencyCode.value;
   } catch (error) {
     notify(error instanceof Error ? error.message : "Could not check the game wallet");
   } finally {
@@ -954,7 +965,7 @@ async function returnGameFunds(): Promise<void> {
     gameWalletBalance.value = 0;
     balance.value = data.balance;
     if (user.value) user.value.balance = data.balance;
-    notify(`${data.currency} ${formatMoney(data.amount)} returned to your main wallet`);
+    notify(`${displayCurrency(data.currency)} ${formatMoney(data.amount)} returned to your main wallet`);
   } catch (error) {
     notify(error instanceof Error ? error.message : "Could not return game funds");
     await refreshGameWallet();
@@ -1007,7 +1018,7 @@ async function play(game: Game): Promise<void> {
 async function submitWalletRequest(): Promise<void> {
   const value = Number(amount.value);
   if (!value || value < 100) {
-    notify(`Minimum ${walletRequestType.value === "deposit" ? "deposit" : "withdrawal"} is Rs. 100`);
+    notify(`Minimum ${walletRequestType.value === "deposit" ? "deposit" : "withdrawal"} is ${currencyLabel.value} 100`);
     return;
   }
   if (!paymentMethod.value.trim()) {

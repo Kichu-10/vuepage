@@ -27,6 +27,8 @@ All routes are served by the Express API. During local development, Vite proxies
 
 Email/SMS verification delivery requires the corresponding SMTP or Twilio environment variables. Google sign-in requires `GOOGLE_CLIENT_ID`; the server exposes the matching public client ID to the browser configuration endpoint.
 
+Registration requires a country of `IN` or `PK`; Google Sign-In uses the selected country for new accounts. The saved account country determines its wallet and provider currency: `IN` maps to INR and `PK` to PKR. Existing `NP` accounts map to NPR. Currency configuration can override these provider codes using `GAME_CURRENCY_IN`, `GAME_CURRENCY_PK`, and `GAME_CURRENCY_NP`.
+
 ## Wallet and KYC
 
 | Method | Path | Access | Purpose |
@@ -36,6 +38,8 @@ Email/SMS verification delivery requires the corresponding SMTP or Twilio enviro
 | `POST` | `/api/auth/kyc` | User JWT | Submit identity details and KYC document files |
 
 Withdrawals require verified KYC and valid destination details. A deposit requires a payment reference and proof file. Uploads accept JPEG, PNG, and PDF files up to 5 MB.
+
+Wallet amounts are numeric values in the account's currency. The customer interface displays INR and NPR as `Rs.` and PKR as `PKR`; game-provider APIs continue to use their configured ISO currency codes.
 
 ## Game provider
 
@@ -49,6 +53,8 @@ The integration uses the provider's **transfer wallet** flow. Funds move between
 | `POST` | `/api/games/wallet/return` | User JWT | Transfer all provider-wallet funds back to the app wallet |
 
 Transfers use a stable local transaction ID as the provider idempotency key. A timeout leaves the transfer pending so retrying the operation reuses the same ID; funds are not automatically refunded when the provider outcome is uncertain. Only a definitive provider rejection fails and reverses an inbound transfer. Pending withdrawals are excluded when calculating the amount transferred from the app wallet.
+
+`GET /api/games/wallet` returns the provider ISO currency code and numeric balance. New player accounts use the currency mapped from the signed-in user's saved country.
 
 The `/api/wallet/play` endpoint is retained only as a compatibility response and does not launch a game; use the game-specific launch endpoint instead.
 

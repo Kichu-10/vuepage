@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { readDb, writeDb, createWithdrawalRequest } from "../database.js";
+import { currencyForCountry, displayCurrency } from "../services/game-provider.js";
 
 const walletRequestSchema = z.object({
   type: z.enum(["deposit", "withdrawal"]),
@@ -60,7 +61,7 @@ export function createWalletRouter(uploadDir) {
       userId: user.id,
       type,
       title: `${type === "deposit" ? "Deposit" : "Withdrawal"} request submitted`,
-      message: `Rs. ${roundedAmount.toLocaleString("en-US")} is pending administrator review.`,
+      message: `${displayCurrency(currencyForCountry(user.country))} ${roundedAmount.toLocaleString("en-US")} is pending administrator review.`,
       relatedId: transaction.id,
       read: false,
       createdAt: new Date().toISOString(),

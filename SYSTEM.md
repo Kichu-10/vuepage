@@ -17,6 +17,7 @@ B9 Game is a mobile-friendly gaming platform built as a Vue web app with an Expr
 - Wallet deposits and withdrawals with admin review
 - Admin dashboard for users, transactions, support, settings, game results, and visual promotion banners
 - HUIDU transfer-wallet integration for game catalogs, launches, and wallet transfers
+- Country-based wallet and game-provider currencies: India uses INR, Pakistan uses PKR, and supported existing Nepal accounts use NPR. INR and NPR display to users as `Rs.`; PKR displays as `PKR`.
 
 Promotions can be added, edited, paused, and activated in the admin **Promotions** section. Admins may upload banner artwork and mark a complete creative so it displays edge-to-edge in the homepage carousel.
 
@@ -28,11 +29,13 @@ SQLite stores users, transactions, integer-cent balances, ledger entries, game p
 
 Uploaded files are stored under `vue-app/server/uploads/`. The SQLite database defaults to `vue-app/server/database.sqlite`; `SQLITE_PATH` can override it. The API creates local database backups under `server/backups`.
 
+New account registration and Google Sign-In country selection support India and Pakistan. The selected country determines the account's currency; existing Nepal accounts are also mapped to NPR. Game-provider requests use the configured ISO currency code, while the customer-facing label uses `Rs.` for INR/NPR and `PKR` for PKR. Provider currency codes can be overridden with the server-side `GAME_CURRENCY_IN`, `GAME_CURRENCY_PK`, and `GAME_CURRENCY_NP` settings.
+
 ## Security and provider notes
 
 - User and administrator APIs require JWTs; administrator routes also enforce the admin role and optional IP allowlisting.
 - Keep secrets in the server environment or ignored `vue-app/.env.local`; never put them in frontend variables or source control.
-- HUIDU uses AES-256-ECB encrypted transfer requests. Its catalog API currently returns error **1004 — Invalid hash code** with the configured account, so live catalog and game launches are not verified. See the [provider setup guide](./docs/GAME-PROVIDER-SETUP.md).
+- HUIDU uses AES-256-ECB encrypted transfer requests. Recent live catalog checks returned an invalid game-entry response, so live catalog and game launches are not verified. See the [provider setup guide](./docs/GAME-PROVIDER-SETUP.md).
 - Banner images are public media; identity documents and payment proofs require administrator authorization.
 
 ## Run and validate

@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { currencyForCountry, displayCurrency } from "./services/game-provider.js";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const sqliteFile = process.env.SQLITE_PATH || path.join(directory, "database.sqlite");
@@ -571,7 +572,7 @@ export function decideTransaction({ transactionId, status, adminUsername }) {
     const row = db.prepare("SELECT * FROM transactions WHERE id = ?").get(transactionId);
     if (!row) throw new Error("Request not found");
     if (row.status !== "pending") throw new Error("Request already processed");
-    const user = db.prepare("SELECT id, username, balance_cents FROM users WHERE id = ?").get(row.user_id);
+    const user = db.prepare("SELECT id, username, country, balance_cents FROM users WHERE id = ?").get(row.user_id);
     if (!user) throw new Error("User not found");
     let balance = dollars(user.balance_cents);
     if (status === "approved") {
@@ -590,12 +591,12 @@ export function decideTransaction({ transactionId, status, adminUsername }) {
       INSERT INTO notifications (id, user_id, type, title, message, related_id, is_read, created_at)
       VALUES (?, ?, ?, ?, ?, ?, 0, ?)
     `).run(randomUUID(), user.id, row.type, `${row.type === "deposit" ? "Deposit" : "Withdrawal"} ${status}`,
-      `Your request for Rs. ${dollars(row.amount_cents).toLocaleString("en-US")} was ${status}.`, row.id, processedAt);
+      `Your request for ${displayCurrency(currencyForCountry(user.country))} ${dollars(row.amount_cents).toLocaleString("en-US")} was ${status}.`, row.id, processedAt);
     db.prepare(`
       INSERT INTO audit_logs (id, admin_username, action, target, details, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(randomUUID(), adminUsername, `${row.type.toUpperCase()}_${status.toUpperCase()}`, user.username,
-      `Rs. ${dollars(row.amount_cents).toLocaleString("en-US")}`, processedAt);
+      `${displayCurrency(currencyForCountry(user.country))} ${dollars(row.amount_cents).toLocaleString("en-US")}`, processedAt);
     db.exec("COMMIT;");
     return { transactionId: row.id, balance };
   } catch (error) {

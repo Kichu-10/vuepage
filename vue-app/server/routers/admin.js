@@ -9,6 +9,7 @@ import { validate } from "../middleware/validate.js";
 import { changeBalance, decideTransaction, readDb, writeDb } from "../database.js";
 import { approveTransaction } from "../services/wallet.js";
 import { logger } from "../config/logger.js";
+import { currencyForCountry, displayCurrency } from "../services/game-provider.js";
 
 const transactionDecisionSchema = z.object({ status: z.enum(["approved", "rejected"]) });
 const userUpdateSchema = z.object({
@@ -205,7 +206,8 @@ export function createAdminRouter(uploadDir) {
           return res.status(400).json({ error: error instanceof Error ? error.message : "Balance adjustment failed" });
         }
       }
-      addAudit(db, admin?.username || "admin", "BALANCE_ADJUSTED", user.username, `Rs. ${previousBalance} -> Rs. ${user.balance}; ${req.body.reason || "Manual adjustment"}`);
+      const currency = displayCurrency(currencyForCountry(user.country));
+      addAudit(db, admin?.username || "admin", "BALANCE_ADJUSTED", user.username, `${currency} ${previousBalance} -> ${currency} ${user.balance}; ${req.body.reason || "Manual adjustment"}`);
     }
     writeDb(db);
     res.json({ user: publicUser(user) });
@@ -291,12 +293,12 @@ export function createAdminRouter(uploadDir) {
       user.id,
       req.body.category,
       `${req.body.gameName || req.body.category} ${req.body.outcome}`,
-      winnings ? `You won Rs. ${winnings.toLocaleString("en-US")} and the amount has been added to your wallet.` :
+      winnings ? `You won ${displayCurrency(currencyForCountry(user.country))} ${winnings.toLocaleString("en-US")} and the amount has been added to your wallet.` :
         `Your ${req.body.category} result was recorded as no win.`,
       eventId,
     );
     addAudit(db, admin?.username || "admin", "GAME_RESULT_RECORDED", user.username,
-      `${req.body.category} · ${req.body.gameName || req.body.category} · ${req.body.outcome} · Rs. ${winnings} · Ref: ${eventId}`);
+      `${req.body.category} · ${req.body.gameName || req.body.category} · ${req.body.outcome} · ${displayCurrency(currencyForCountry(user.country))} ${winnings} · Ref: ${eventId}`);
     writeDb(db);
     res.status(201).json({ message: "Game result recorded", user: publicUser(user) });
   });
