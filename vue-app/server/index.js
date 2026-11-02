@@ -15,6 +15,7 @@ import { createWalletRouter } from "./routers/wallet.js";
 import { createAdminRouter } from "./routers/admin.js";
 import { createKycRouter } from "./routers/kyc.js";
 import { createSupportRouter } from "./routers/support.js";
+import { createGamesRouter } from "./routers/games.js";
 import { backupSqlite } from "./database.js";
 import { logger } from "./config/logger.js";
 
@@ -80,6 +81,7 @@ app.use("/api/auth", createKycRouter(uploadDir));
 app.use("/api/admin", createAdminAuthRouter());
 app.use("/api/admin", createAdminRouter());
 app.use("/api", createSupportRouter());
+app.use("/api/games", createGamesRouter());
 
 function auth(req, res, next) {
   const header = req.headers.authorization || "";

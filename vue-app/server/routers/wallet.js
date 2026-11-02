@@ -26,7 +26,7 @@ export function createWalletRouter(uploadDir) {
   const router = express.Router();
 
   router.post("/play", authenticate, (_req, res) => {
-    res.status(503).json({ error: "Game provider is not connected. This account will not be charged." });
+    res.status(400).json({ error: "Choose a provider game and launch it through /api/games/:gameId/launch." });
   });
 
   router.post("/request", authenticate, upload.single("proof"), validate(walletRequestSchema), (req, res) => {

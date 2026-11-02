@@ -46,6 +46,10 @@ The API reads `.env.local` from `vue-app/`. Vite exposes frontend variables with
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Optional email OTP delivery |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | Optional SMS OTP delivery |
 | `MANUAL_PAYMENT_*` | Manual deposit destination details shown to users |
+| `GAME_API_BASE_URL` | HTTPS base URL for the provider API |
+| `GAME_OPERATOR_ID` | Provider-assigned operator ID |
+| `GAME_SECRET`, `GAME_SALT` | Provider signing credentials; server-side only |
+| `GAME_CURRENCY_IN`, `GAME_CURRENCY_PK` | Provider currency codes for Indian and Pakistani accounts; default `INR` and `PKR` |
 
 Use long, unique secrets and restrict administrator access at the network layer for production. The sample values in `.env.example` are placeholders.
 
@@ -85,6 +89,11 @@ Test restore procedures periodically in a separate environment. Do not restore a
 - Set `NODE_ENV=production` and confirm the server starts with the production configuration.
 - Configure a restricted `ADMIN_ALLOWED_IPS` allowlist where practical.
 - Configure the intended Google, email, SMS, payment, and Sentry integrations.
+- Configure `GAME_API_BASE_URL`, `GAME_OPERATOR_ID`, `GAME_SECRET`, and `GAME_SALT` in the server environment; never put the operator secret or salt in a `VITE_` variable or browser code.
+- The game integration uses the provider's transfer-wallet API, so provider callbacks are not required. Confirm the configured API URL is the provider's HTTPS API endpoint.
+- Confirm the provider account has both INR and PKR enabled before opening games to users in India and Pakistan.
+- Use only test-provider credentials for local integration checks. Rotate any credentials shared in screenshots or chats before deployment.
+- Verify the provider's licensing and local age/KYC requirements before enabling real-money games.
 - Use persistent storage and a separate protected destination for off-host backups.
 - Ensure deployment and reverse-proxy settings preserve the intended client IP for IP allowlisting.
 - Run `npm test` and `npm run build` before deployment.

@@ -80,25 +80,29 @@
             {{ showAll ? "Show Less" : "View All" }} <ChevronRight :size="17" />
           </button>
         </div>
-        <p v-if="visibleGames.length === 0" class="empty-state">No games found</p>
+        <p v-if="gamesLoading" class="empty-state">Loading games...</p>
+        <p v-else-if="gamesError" class="empty-state">{{ gamesError }}</p>
+        <p v-else-if="visibleGames.length === 0" class="empty-state">No games found</p>
         <div class="game-grid">
           <article
             v-for="game in visibleGames"
             :key="game.id"
             class="game-card"
-            :class="game.theme"
+            :class="[game.provider === 'PG' ? 'fortune-card' : 'fishing-card', { 'game-unavailable': game.status !== 0 }]"
             role="button"
             tabindex="0"
-            :aria-label="`Play ${game.name}`"
-            @click="play(game.name)"
-            @keydown.enter="play(game.name)"
-            @keydown.space.prevent="play(game.name)"
+            :aria-label="game.status === 0 ? `Play ${game.name}` : `${game.name} unavailable`"
+            :aria-disabled="game.status !== 0 || launchingGameId === game.id"
+            @click="play(game)"
+            @keydown.enter="play(game)"
+            @keydown.space.prevent="play(game)"
           >
-            <img :src="game.img" :alt="game.name" loading="lazy" />
+            <img :src="game.provider === 'PG' ? slot : fish" :alt="game.name" loading="lazy" />
             <div class="game-shade" />
-            <span class="game-brand">{{ game.brand }}</span>
-            <span class="game-art-title" aria-hidden="true">{{ game.cardTitle }}</span>
-            <span class="game-name">{{ game.name }}</span>
+            <span class="game-brand">{{ game.provider }}</span>
+            <span class="game-art-title" aria-hidden="true">{{ game.name }}</span>
+            <span class="game-name">{{ launchingGameId === game.id ? "Opening..." : game.name }}</span>
+            <span v-if="game.status !== 0" class="game-status">{{ game.status === 1 ? "Maintenance" : "Unavailable" }}</span>
             <button
               class="favorite-button"
               :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'"
@@ -131,6 +135,16 @@
             <button :class="{ active: walletRequestType === 'withdrawal' }" @click="walletRequestType = 'withdrawal'">Withdraw</button>
           </div>
           <p class="bonus-note">Submit a request for admin review and balance approval.</p>
+          <div class="game-wallet-panel">
+            <div>
+              <strong>Game wallet</strong>
+              <small v-if="gameWalletLoading">Checking provider balance...</small>
+              <small v-else>{{ gameWalletCurrency }} {{ formatMoney(gameWalletBalance) }}</small>
+            </div>
+            <button :disabled="gameWalletLoading || returningGameFunds" @click="returnGameFunds">
+              {{ returningGameFunds ? "Returning..." : "Return game funds" }}
+            </button>
+          </div>
           <div v-if="walletRequestType === 'deposit'" class="manual-payment-details">
             <strong>{{ paymentDetails.bankName }}</strong>
             <p v-if="paymentDetails.accountName"><span>Account name:</span> {{ paymentDetails.accountName }}</p>
@@ -254,10 +268,10 @@
             v-for="game in games.filter((item) => favorites.includes(item.id))"
             :key="game.id"
             class="favorite-game"
-            @click="play(game.name); modal = null"
+            @click="play(game); modal = null"
           >
-            <img :src="game.img" :alt="game.name" />
-            <span><strong>{{ game.name }}</strong><small>{{ game.brand }}</small></span>
+            <img :src="game.provider === 'PG' ? slot : fish" :alt="game.name" />
+            <span><strong>{{ game.name }}</strong><small>{{ game.provider }}</small></span>
           </button>
         </div>
 
@@ -354,10 +368,6 @@ import {
   Volume2, Wallet, X,
 } from "lucide-vue-next";
 import banner from "./assets/banner.jpg";
-import aviator from "./assets/g-aviator.jpg";
-import chicken from "./assets/g-chicken.jpg";
-import aviatrix from "./assets/g-aviatrix.jpg";
-import mines from "./assets/g-mines.jpg";
 import fish from "./assets/g-fish.jpg";
 import slot from "./assets/g-slot.jpg";
 import b9Logo from "./assets/b9-logo.jpg";
@@ -368,7 +378,7 @@ import spribeCategory from "./assets/03_spribe.png";
 import fishingCategory from "./assets/04_fishing.png";
 import inOutCategory from "./assets/05_inout.png";
 
-type Category = "Popular" | "PG Slot" | "Spribe" | "Fishing" | "InOut";
+type GameCategory = "Popular" | "PG Slot" | "Spribe" | "Fishing" | "InOut";
 type Modal = "deposit" | "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | "transactions" | "favorites" | "support" | null;
 type AuthUser = { id: string; username: string; phone: string; email: string; country: string; kycStatus: string; role: "user" | "admin"; balance: number; status: string; createdAt: string; lastLoginAt: string | null };
 type WalletTransaction = { id: string; type: "deposit" | "withdrawal"; amount: number; status: string; createdAt: string; paymentMethod?: string; paymentReference?: string; paymentNote?: string };
@@ -377,32 +387,17 @@ type InboxMessage = { id: string; type: string; title: string; message: string; 
 type Game = {
   id: number;
   name: string;
-  brand: string;
-  img: string;
-  cardTitle: string;
-  theme: string;
-  categories: Category[];
+  provider: string;
+  status: number;
 };
 
-const categories: Category[] = ["Popular", "PG Slot", "Spribe", "Fishing", "InOut"];
+const categories: GameCategory[] = ["Popular", "PG Slot", "Spribe", "Fishing", "InOut"];
 const categoryItems = [
   { label: "Popular" as const, image: popularCategory },
   { label: "PG Slot" as const, image: pgSlotCategory },
   { label: "Spribe" as const, image: spribeCategory },
   { label: "Fishing" as const, image: fishingCategory },
   { label: "InOut" as const, image: inOutCategory },
-];
-const games: Game[] = [
-  { id: 1, name: "Aviator", brand: "SPRIBE", img: aviator, cardTitle: "Aviator", theme: "aviator-card", categories: ["Popular", "Spribe"] },
-  { id: 2, name: "Chicken Road 2", brand: "IN", img: chicken, cardTitle: "CHICKEN ROAD 2", theme: "chicken-card", categories: ["Popular", "InOut"] },
-  { id: 3, name: "Aviator", brand: "SPRIBE", img: aviator, cardTitle: "Aviator", theme: "aviator-card", categories: ["Popular", "Spribe"] },
-  { id: 4, name: "Aviatrix", brand: "CRASH GAME", img: aviatrix, cardTitle: "Aviatrix", theme: "aviatrix-card", categories: ["Popular"] },
-  { id: 5, name: "Mines", brand: "SPRIBE", img: mines, cardTitle: "Mines", theme: "mines-card", categories: ["Popular", "Spribe"] },
-  { id: 6, name: "Chicken Road", brand: "IN", img: chicken, cardTitle: "CHICKEN ROAD", theme: "chicken-card", categories: ["Popular", "InOut"] },
-  { id: 7, name: "Fortune Ox", brand: "PG", img: slot, cardTitle: "Fortune Ox", theme: "fortune-card", categories: ["PG Slot"] },
-  { id: 8, name: "Shark Hunter", brand: "FISHING", img: fish, cardTitle: "Shark Hunter", theme: "fishing-card", categories: ["Fishing"] },
-  { id: 9, name: "Lucky Gold", brand: "PG", img: slot, cardTitle: "Lucky Gold", theme: "fortune-card", categories: ["PG Slot"] },
-  { id: 10, name: "Aviator", brand: "SPRIBE", img: aviator, cardTitle: "Aviator", theme: "aviator-card", categories: ["Spribe"] },
 ];
 const slides = [
   { t1: "Get", big: "100%", sub: "Bonus on Your First Deposit", amt: "RS. 50,000" },
@@ -411,7 +406,11 @@ const slides = [
   { t1: "Weekly", big: "VIP", sub: "Rewards for Members", amt: "RS. 25,000" },
 ];
 
-const selectedCategory = ref<Category>("Popular");
+const selectedCategory = ref<GameCategory>("Popular");
+const games = ref<Game[]>([]);
+const gamesLoading = ref(true);
+const gamesError = ref("");
+const launchingGameId = ref<number | null>(null);
 const balance = ref(8891.2);
 const jackpot = ref(10799004.2);
 const slide = ref(0);
@@ -451,6 +450,10 @@ const paymentProof = ref<File | undefined>();
 const paymentDetails = ref<PaymentDetails>({
   bankName: "", accountName: "", accountNumber: "", iban: "", upiId: "", walletName: "", walletNumber: "", instructions: "",
 });
+const gameWalletBalance = ref(0);
+const gameWalletCurrency = ref("INR");
+const gameWalletLoading = ref(false);
+const returningGameFunds = ref(false);
 const inboxMessages = ref<InboxMessage[]>([]);
 const unreadCount = ref(0);
 const inboxLoading = ref(false);
@@ -475,8 +478,15 @@ const kycLabel = computed(() => {
 const visibleGames = computed(() => {
   const search = query.value.trim().toLowerCase();
   const filtered = search
-    ? games.filter((game) => game.name.toLowerCase().includes(search))
-    : games.filter((game) => game.categories.includes(selectedCategory.value));
+    ? games.value.filter((game) => game.name.toLowerCase().includes(search))
+    : games.value.filter((game) => {
+      const provider = game.provider.toLowerCase();
+      if (selectedCategory.value === "Popular") return true;
+      if (selectedCategory.value === "PG Slot") return ["pg", "jl", "pp"].includes(provider);
+      if (selectedCategory.value === "Spribe") return provider.includes("spribe");
+      if (selectedCategory.value === "Fishing") return provider.includes("fish");
+      return provider === "in" || provider.includes("inout");
+    });
   return showAll.value ? filtered : filtered.slice(0, 6);
 });
 const modalTitle = computed(() => {
@@ -492,7 +502,7 @@ const modalTitle = computed(() => {
   return modal.value ?? "";
 });
 const favoriteNames = computed(() => {
-  const names = games.filter((game) => favorites.value.includes(game.id)).map((game) => game.name);
+  const names = games.value.filter((game) => favorites.value.includes(game.id)).map((game) => game.name);
   return names.length ? names.join(", ") : "None yet";
 });
 
@@ -504,6 +514,7 @@ watch([modal, authMode], () => {
 
 onMounted(async () => {
   slideTimer = setInterval(() => { slide.value = (slide.value + 1) % slides.length; }, 4000);
+  void loadGames();
   token.value = localStorage.getItem("b9_token") || "";
   try {
     paymentDetails.value = await fetch("/api/payment/details").then((response) => response.json());
@@ -627,10 +638,60 @@ function requireSignIn(): boolean {
   modal.value = "auth";
   return true;
 }
-function openDeposit(): void {
-  if (!requireSignIn()) modal.value = "deposit";
+async function loadGames(): Promise<void> {
+  gamesLoading.value = true;
+  gamesError.value = "";
+  try {
+    const data = await api("/api/games");
+    games.value = data.games;
+  } catch (error) {
+    games.value = [];
+    const message = error instanceof Error ? error.message : "";
+    gamesError.value = message === "Game provider is not configured"
+      ? "Game catalog will appear after the provider is configured on the server."
+      : /invalid hash|signature/i.test(message)
+        ? "The game provider rejected the API signature. The server-side operator credentials or signing settings need to be verified."
+        : "Games are temporarily unavailable. Please try again later.";
+  } finally {
+    gamesLoading.value = false;
+  }
 }
-function selectCategory(category: Category): void {
+function openDeposit(): void {
+  if (!requireSignIn()) {
+    modal.value = "deposit";
+    void refreshGameWallet();
+  }
+}
+async function refreshGameWallet(): Promise<void> {
+  if (!signedIn.value) return;
+  gameWalletLoading.value = true;
+  try {
+    const data = await api("/api/games/wallet");
+    gameWalletBalance.value = Number(data.balance || 0);
+    gameWalletCurrency.value = data.currency || "INR";
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "Could not check the game wallet");
+  } finally {
+    gameWalletLoading.value = false;
+  }
+}
+async function returnGameFunds(): Promise<void> {
+  if (returningGameFunds.value) return;
+  returningGameFunds.value = true;
+  try {
+    const data = await api("/api/games/wallet/return", { method: "POST", body: "{}" });
+    gameWalletBalance.value = 0;
+    balance.value = data.balance;
+    if (user.value) user.value.balance = data.balance;
+    notify(`${data.currency} ${formatMoney(data.amount)} returned to your main wallet`);
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "Could not return game funds");
+    await refreshGameWallet();
+  } finally {
+    returningGameFunds.value = false;
+  }
+}
+function selectCategory(category: GameCategory): void {
   selectedCategory.value = category;
   query.value = "";
   showAll.value = false;
@@ -643,13 +704,30 @@ function toggleFavorite(id: number): void {
     ? favorites.value.filter((favorite) => favorite !== id)
     : [...favorites.value, id];
 }
-async function play(name: string): Promise<void> {
+async function play(game: Game): Promise<void> {
   if (requireSignIn()) return;
+  if (game.status !== 0) {
+    notify("This game is currently unavailable");
+    return;
+  }
+  if (launchingGameId.value !== null) return;
+  const gameWindow = window.open("about:blank", "_blank");
+  if (!gameWindow) {
+    notify("Allow pop-ups to launch a game");
+    return;
+  }
+  gameWindow.opener = null;
+  launchingGameId.value = game.id;
   try {
-    await api("/api/wallet/play", { method: "POST", body: "{}" });
-    notify(`${name} launched`);
+    const data = await api(`/api/games/${game.id}/launch`, { method: "POST", body: "{}" });
+    balance.value = Number(data.balance);
+    if (user.value) user.value.balance = balance.value;
+    gameWindow.location.replace(data.gameUrl);
   } catch (error) {
+    gameWindow.close();
     notify(error instanceof Error ? error.message : "Unable to play");
+  } finally {
+    launchingGameId.value = null;
   }
 }
 async function submitWalletRequest(): Promise<void> {
@@ -1065,17 +1143,13 @@ button { cursor: pointer; }
 .game-card > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform .22s ease; }
 .game-card:hover > img { transform: scale(1.04); }
 .game-shade { position: absolute; z-index: 1; inset: 0; background: linear-gradient(180deg, rgb(0 25 10 / 16%) 0%, transparent 34%, rgb(0 24 12 / 44%) 100%); }
-.game-card.aviator-card { background: #087d3c; }
-.game-card.aviator-card > img { filter: hue-rotate(42deg) saturate(1.2) brightness(.74); }
-.game-card.chicken-card > img { filter: saturate(1.35) contrast(1.04); }
-.game-card.aviatrix-card > img { filter: hue-rotate(50deg) saturate(1.2) brightness(.75); }
-.game-card.mines-card > img { filter: saturate(1.35) hue-rotate(4deg); }
 .game-card.fortune-card > img { filter: hue-rotate(290deg) saturate(1.3); }
 .game-brand { position: absolute; z-index: 2; top: 9px; left: 8px; color: white; font-size: clamp(8px, 2.4vw, 11px); font-weight: 900; text-decoration: underline; text-shadow: 0 1px 3px rgb(0 0 0 / 40%); }
 .game-art-title { position: absolute; z-index: 2; right: 3px; bottom: 27px; left: 3px; color: white; font-size: clamp(12px, 4vw, 20px); font-style: italic; font-weight: 1000; line-height: .95; text-align: center; text-shadow: 1px 2px 2px #1d2220, -1px -1px 1px rgb(255 255 255 / 55%); }
-.aviator-card .game-art-title { color: #ff2d55; font-family: Georgia, serif; font-size: clamp(16px, 5vw, 25px); }
-.mines-card .game-art-title { font-style: normal; font-size: clamp(22px, 7vw, 32px); text-align: left; padding-left: 12px; }
 .game-name { position: absolute; z-index: 2; right: 4px; bottom: 7px; left: 4px; color: white; font-size: 12px; font-weight: 700; text-align: center; text-shadow: 0 1px 3px rgb(0 0 0 / 55%); }
+.game-status { position: absolute; z-index: 3; top: 50%; left: 50%; padding: 6px 10px; border-radius: 999px; background: rgb(0 0 0 / 75%); color: white; font-size: 11px; font-weight: 700; transform: translate(-50%, -50%); }
+.game-unavailable { cursor: not-allowed; }
+.game-unavailable > img { filter: grayscale(.8) brightness(.65); }
 .favorite-button { position: absolute; z-index: 3; top: 7px; right: 7px; display: grid; width: 27px; height: 27px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: #267c48; background: white; box-shadow: 0 2px 6px rgb(0 0 0 / 12%); }
 .empty-state { padding: 20px 0; color: #6d786f; text-align: center; font-size: 13px; }
 .bottom-nav {
@@ -1105,6 +1179,12 @@ button { cursor: pointer; }
 .close-button { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 50%; color: #59665d; background: #f0f5f0; }
 .modal-content { display: flex; flex-direction: column; gap: 12px; }
 .bonus-note { margin: 0; padding: 9px; border-radius: 9px; color: #267c36; background: #e5f3e3; font-size: 13px; }
+.game-wallet-panel { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px; border: 1px solid #dce9df; border-radius: 10px; background: #f7fbf7; }
+.game-wallet-panel > div { display: grid; gap: 3px; }
+.game-wallet-panel strong { color: #315940; font-size: 13px; }
+.game-wallet-panel small { color: #667469; font-size: 12px; }
+.game-wallet-panel button { flex: 0 0 auto; padding: 9px 11px; border: 0; border-radius: 9px; color: white; background: #188546; font-size: 12px; font-weight: 700; }
+.game-wallet-panel button:disabled { opacity: .6; }
 .amount-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .amount-options button { padding: 9px 3px; border: 1px solid #d5ded6; border-radius: 9px; background: white; font-size: 13px; }
 .amount-options button.chosen { border-color: #319d42; background: #e5f3e3; font-weight: 700; }

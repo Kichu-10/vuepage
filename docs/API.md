@@ -30,10 +30,24 @@ Email/SMS verification delivery requires the corresponding SMTP or Twilio enviro
 | --- | --- | --- | --- |
 | `POST` | `/api/wallet/request` | User JWT | Submit a deposit or withdrawal request; multipart deposit requests include a `proof` file |
 | `GET` | `/api/wallet/transactions` | User JWT | List the current user's recent transactions |
-| `POST` | `/api/wallet/play` | User JWT | Returns HTTP 503 until a game provider is connected; no account charge is made |
 | `POST` | `/api/auth/kyc` | User JWT | Submit identity details and KYC document files |
 
 Withdrawals require verified KYC and valid destination details. A deposit requires a payment reference and proof file. Uploads accept JPEG, PNG, and PDF files up to 5 MB.
+
+## Game provider
+
+The integration uses the provider's **transfer wallet** flow. Funds move between the app wallet and the provider wallet through authenticated, idempotent transfers; wagers are handled inside the provider.
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/games` | Public | Retrieve the provider's game catalog and availability |
+| `GET` | `/api/games/wallet` | User JWT | Read the authenticated user's provider-wallet balance |
+| `POST` | `/api/games/:gameId/launch` | User JWT | Transfer available funds to the provider wallet and return an HTTPS game URL |
+| `POST` | `/api/games/wallet/return` | User JWT | Transfer all provider-wallet funds back to the app wallet |
+
+Transfers use a stable local transaction ID as the provider idempotency key. A timeout leaves the transfer pending so retrying the operation reuses the same ID; funds are not automatically refunded when the provider outcome is uncertain. Only a definitive provider rejection fails and reverses an inbound transfer. Pending withdrawals are excluded when calculating the amount transferred from the app wallet.
+
+The `/api/wallet/play` endpoint is retained only as a compatibility response and does not launch a game; use the game-specific launch endpoint instead.
 
 ## Support and inbox
 

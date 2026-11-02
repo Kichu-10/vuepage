@@ -28,9 +28,9 @@ Browser
       └── Pinia session store persists user/admin tokens
           └── /api requests
               └── Express app (server/index.js)
-                  ├── Routers: auth, wallet, KYC, admin, support
+                  ├── Routers: auth, wallet, games, KYC, admin, support
                   ├── Middleware: JWT/admin authorization, Zod validation
-                  ├── Wallet service and transactional SQLite operations
+                  ├── Signed provider client and transactional game-wallet transfers
                   └── SQLite database, uploads, scheduled database snapshots
 ```
 
@@ -46,6 +46,8 @@ Browser
 
 - `server/index.js` configures Express middleware, public endpoints, router mounts, error handling, startup, and scheduled backups.
 - `server/routers/` contains route handlers for authentication, wallet, KYC, administration, and support.
+- `server/routers/games.js` lists games, launches provider sessions, and manages authenticated game-wallet transfers.
+- `server/services/game-provider.js` signs transfer-wallet API requests and retrieves the catalog and launch URLs.
 - `server/middleware/auth.js` verifies JWTs and checks administrator role, account state, and optional IP allowlisting.
 - `server/middleware/validate.js` applies Zod schemas to request bodies.
 - `server/services/wallet.js` contains wallet-facing helpers; SQLite transaction primitives are in `server/database.js`.
@@ -58,6 +60,8 @@ SQLite is stored at `server/database.sqlite` by default. Set `SQLITE_PATH` to us
 - `users`: identity, credentials, account state, KYC details, and integer-cent balance.
 - `transactions`: deposit and withdrawal requests, payment details, status, and timestamps.
 - `ledger_entries`: signed balance changes and resulting balances, linked to users and optionally transactions.
+- `game_players`: stable provider player IDs and the currency fixed for the provider account.
+- `game_wallet_transfers`: idempotent, recoverable inbound/outbound transfers between the app and provider wallets.
 - `kyc_documents`, `otps`, `verifications`, `notifications`, `support_tickets`, `audit_logs`, `game_results`, and `platform_settings`.
 
 Money is stored as integer cents to avoid floating-point arithmetic. The database layer uses SQLite transactions for balance changes, withdrawal reservation, and administrator decisions:
@@ -66,6 +70,11 @@ Money is stored as integer cents to avoid floating-point arithmetic. The databas
 2. Approving a deposit or withdrawal updates the balance, ledger, transaction status, notification, and audit log atomically.
 3. Already-processed requests cannot be approved a second time.
 4. Rejected requests do not create a balance movement.
+5. Inbound game-wallet transfers reserve and debit app-wallet funds before contacting the provider. A definitive rejection restores the funds; uncertain results remain pending for an idempotent retry.
+6. Completed outbound game-wallet transfers credit the main wallet and ledger in a single transaction, using the provider transaction ID to prevent duplicate credits.
+6. Pending withdrawals are excluded from the balance available to games, and game bets cannot spend reserved funds.
+
+The provider's legacy API requires MD5 request signatures with a merchant secret and salt. Secrets are server-only configuration; callbacks are verified using constant-time comparison, and outbound provider calls require HTTPS.
 
 On startup, the database layer creates or updates the relational schema and migrates recognized legacy SQLite JSON records. A legacy `server/database.json`, when present, is also used as an import source. Keep a verified backup before deploying schema changes.
 

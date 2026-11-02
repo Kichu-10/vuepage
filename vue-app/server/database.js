@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
@@ -92,7 +92,25 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_ledger_user ON ledger_entries(user_id);
   CREATE INDEX IF NOT EXISTS idx_ledger_transaction ON ledger_entries(transaction_id);
+
+  CREATE TABLE IF NOT EXISTS game_players (
+    user_id TEXT PRIMARY KEY, player_id TEXT NOT NULL UNIQUE, currency TEXT NOT NULL,
+    provider_created INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS game_wallet_transfers (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, player_id TEXT NOT NULL,
+    currency TEXT NOT NULL, direction TEXT NOT NULL, amount_cents INTEGER NOT NULL,
+    status TEXT NOT NULL, provider_balance_cents INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_game_wallet_transfers_user ON game_wallet_transfers(user_id);
+  CREATE INDEX IF NOT EXISTS idx_game_wallet_transfers_status ON game_wallet_transfers(status);
 `);
+const gamePlayerColumns = db.prepare("PRAGMA table_info(game_players)").all().map((column) => column.name);
+if (!gamePlayerColumns.includes("provider_created")) {
+  db.exec("ALTER TABLE game_players ADD COLUMN provider_created INTEGER NOT NULL DEFAULT 0;");
+}
 
 function cents(value) {
   const amount = Number(value);
@@ -298,6 +316,181 @@ export function reservedWithdrawalCents(userId) {
   `).get(userId).total;
 }
 
+export function ensureGamePlayer(userId, currency) {
+  const user = db.prepare("SELECT id, status FROM users WHERE id = ?").get(userId);
+  if (!user || user.status !== "active") throw new Error("Account unavailable");
+  const existing = db.prepare("SELECT player_id, currency, provider_created FROM game_players WHERE user_id = ?").get(userId);
+  if (existing) {
+    if (existing.currency !== currency) throw new Error("Game currency is already fixed for this account");
+    return {
+      playerId: existing.player_id,
+      currency: existing.currency,
+      providerCreated: Boolean(existing.provider_created),
+    };
+  }
+  const playerId = `b9${createHash("sha256").update(userId).digest("hex").slice(0, 24)}`;
+  db.prepare("INSERT INTO game_players (user_id, player_id, currency, provider_created, created_at) VALUES (?, ?, ?, 0, ?)")
+    .run(userId, playerId, currency, new Date().toISOString());
+  return { playerId, currency, providerCreated: false };
+}
+
+export function markGamePlayerCreated(userId) {
+  db.prepare("UPDATE game_players SET provider_created = 1 WHERE user_id = ?").run(userId);
+}
+
+export function getGamePlayer(userId) {
+  const player = db.prepare(`
+    SELECT player_id AS playerId, currency, provider_created AS providerCreated
+    FROM game_players WHERE user_id = ?
+  `).get(userId);
+  return player ? { ...player, providerCreated: Boolean(player.providerCreated) } : null;
+}
+
+function transferRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    playerId: row.player_id,
+    currency: row.currency,
+    direction: row.direction,
+    amountCents: row.amount_cents,
+    status: row.status,
+    providerBalanceCents: row.provider_balance_cents,
+  };
+}
+
+export function findPendingGameWalletTransfer(userId, direction) {
+  return transferRow(db.prepare(`
+    SELECT * FROM game_wallet_transfers
+    WHERE user_id = ? AND direction = ? AND status = 'pending'
+    ORDER BY created_at LIMIT 1
+  `).get(userId, direction));
+}
+
+export function getGameWalletTransfer(id) {
+  return transferRow(db.prepare("SELECT * FROM game_wallet_transfers WHERE id = ?").get(id));
+}
+
+export function beginGameWalletTransfer({ id, userId, playerId, currency, direction, amountCents }) {
+  if (!["in", "out"].includes(direction)) throw new TypeError("Invalid game wallet transfer direction");
+  if (!Number.isSafeInteger(amountCents) || amountCents < 0 || (direction === "in" && amountCents <= 0)) {
+    throw new TypeError("Invalid game wallet transfer amount");
+  }
+  db.exec("BEGIN IMMEDIATE;");
+  try {
+    const previous = db.prepare("SELECT * FROM game_wallet_transfers WHERE id = ?").get(id);
+    if (previous) {
+      if (previous.user_id !== userId || previous.player_id !== playerId || previous.currency !== currency ||
+          previous.direction !== direction || (direction === "in" && previous.amount_cents !== amountCents)) {
+        throw new Error("Conflicting game wallet transfer");
+      }
+      db.exec("COMMIT;");
+      return transferRow(previous);
+    }
+    const pending = db.prepare("SELECT id FROM game_wallet_transfers WHERE user_id = ? AND status = 'pending'").get(userId);
+    if (pending) throw new Error("Another game wallet transfer is still pending");
+    const user = db.prepare("SELECT balance_cents, status FROM users WHERE id = ?").get(userId);
+    const player = db.prepare("SELECT player_id, currency FROM game_players WHERE user_id = ?").get(userId);
+    if (!user || user.status !== "active") throw new Error("Account unavailable");
+    if (!player || player.player_id !== playerId || player.currency !== currency) throw new Error("Game player not found");
+    const now = new Date().toISOString();
+    if (direction === "in") {
+      const available = user.balance_cents - reservedWithdrawalCents(userId);
+      if (available < amountCents) throw new Error("Insufficient available balance");
+      const next = user.balance_cents - amountCents;
+      db.prepare("UPDATE users SET balance_cents = ? WHERE id = ?").run(next, userId);
+      db.prepare(`
+        INSERT INTO ledger_entries (id, user_id, transaction_id, type, amount_cents, balance_cents, reference, created_at)
+        VALUES (?, ?, ?, 'debit', ?, ?, ?, ?)
+      `).run(randomUUID(), userId, id, -amountCents, next, "Transfer to game wallet", now);
+    }
+    db.prepare(`
+      INSERT INTO game_wallet_transfers (
+        id, user_id, player_id, currency, direction, amount_cents, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `).run(id, userId, playerId, currency, direction, amountCents, now, now);
+    db.exec("COMMIT;");
+    return transferRow(db.prepare("SELECT * FROM game_wallet_transfers WHERE id = ?").get(id));
+  } catch (error) {
+    db.exec("ROLLBACK;");
+    throw error;
+  }
+}
+
+export function completeGameWalletTransfer({ id, amountCents, providerBalanceCents }) {
+  if (![amountCents, providerBalanceCents].every(Number.isSafeInteger) || amountCents < 0 || providerBalanceCents < 0) {
+    throw new TypeError("Invalid provider transfer response");
+  }
+  db.exec("BEGIN IMMEDIATE;");
+  try {
+    const transfer = db.prepare("SELECT * FROM game_wallet_transfers WHERE id = ?").get(id);
+    if (!transfer) throw new Error("Game wallet transfer not found");
+    if (transfer.status === "completed") {
+      db.exec("COMMIT;");
+      return { transfer: transferRow(transfer), balance: dollars(db.prepare("SELECT balance_cents FROM users WHERE id = ?").get(transfer.user_id).balance_cents) };
+    }
+    if (transfer.status !== "pending") throw new Error("Game wallet transfer is not pending");
+    if (transfer.direction === "in" && transfer.amount_cents !== amountCents) {
+      throw new Error("Provider transfer amount does not match the reserved amount");
+    }
+
+    if (transfer.direction === "out") {
+      const user = db.prepare("SELECT balance_cents FROM users WHERE id = ? AND status = 'active'").get(transfer.user_id);
+      if (!user) throw new Error("Account unavailable");
+      const next = user.balance_cents + amountCents;
+      if (!Number.isSafeInteger(next)) throw new RangeError("Provider balance exceeds the supported range");
+      if (amountCents > 0) {
+        db.prepare("UPDATE users SET balance_cents = ? WHERE id = ?").run(next, transfer.user_id);
+        db.prepare(`
+          INSERT INTO ledger_entries (id, user_id, transaction_id, type, amount_cents, balance_cents, reference, created_at)
+          VALUES (?, ?, ?, 'credit', ?, ?, ?, ?)
+        `).run(randomUUID(), transfer.user_id, id, amountCents, next, "Return from game wallet", new Date().toISOString());
+      }
+    }
+    const now = new Date().toISOString();
+    db.prepare(`
+      UPDATE game_wallet_transfers SET status = 'completed', amount_cents = ?, provider_balance_cents = ?, updated_at = ?
+      WHERE id = ? AND status = 'pending'
+    `).run(amountCents, providerBalanceCents, now, id);
+    const balance = db.prepare("SELECT balance_cents FROM users WHERE id = ?").get(transfer.user_id).balance_cents;
+    db.exec("COMMIT;");
+    return { transfer: { ...transferRow(transfer), amountCents, status: "completed", providerBalanceCents }, balance: dollars(balance) };
+  } catch (error) {
+    db.exec("ROLLBACK;");
+    throw error;
+  }
+}
+
+export function failGameWalletTransfer(id) {
+  db.exec("BEGIN IMMEDIATE;");
+  try {
+    const transfer = db.prepare("SELECT * FROM game_wallet_transfers WHERE id = ?").get(id);
+    if (!transfer) throw new Error("Game wallet transfer not found");
+    if (transfer.status !== "pending") {
+      db.exec("COMMIT;");
+      return transferRow(transfer);
+    }
+    if (transfer.direction === "in") {
+      const user = db.prepare("SELECT balance_cents FROM users WHERE id = ?").get(transfer.user_id);
+      if (!user) throw new Error("Account unavailable");
+      const next = user.balance_cents + transfer.amount_cents;
+      db.prepare("UPDATE users SET balance_cents = ? WHERE id = ?").run(next, transfer.user_id);
+      db.prepare(`
+        INSERT INTO ledger_entries (id, user_id, transaction_id, type, amount_cents, balance_cents, reference, created_at)
+        VALUES (?, ?, ?, 'credit', ?, ?, ?, ?)
+      `).run(randomUUID(), transfer.user_id, id, transfer.amount_cents, next, "Failed game transfer refund", new Date().toISOString());
+    }
+    db.prepare("UPDATE game_wallet_transfers SET status = 'failed', updated_at = ? WHERE id = ? AND status = 'pending'")
+      .run(new Date().toISOString(), id);
+    db.exec("COMMIT;");
+    return { ...transferRow(transfer), status: "failed" };
+  } catch (error) {
+    db.exec("ROLLBACK;");
+    throw error;
+  }
+}
+
 export function changeBalance({ userId, amount, type, transactionId = null, reference = "" }) {
   if (!["credit", "debit"].includes(type)) throw new TypeError("Balance change type must be credit or debit");
   db.exec("BEGIN IMMEDIATE;");
@@ -308,6 +501,9 @@ export function changeBalance({ userId, amount, type, transactionId = null, refe
     if (delta <= 0) throw new TypeError("Balance changes must be positive");
     const next = row.balance_cents + (type === "credit" ? delta : -delta);
     if (next < 0) throw new Error("Insufficient balance");
+    if (type === "debit" && next < reservedWithdrawalCents(userId)) {
+      throw new Error("Insufficient available balance");
+    }
     db.prepare("UPDATE users SET balance_cents = ? WHERE id = ?").run(next, userId);
     db.prepare(`
       INSERT INTO ledger_entries (id, user_id, transaction_id, type, amount_cents, balance_cents, reference, created_at)

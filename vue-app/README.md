@@ -16,4 +16,6 @@ npm run dev
 
 Create a production build with `npm run build`.
 
-Run backend tests with `npm test`. Copy `.env.example` to `.env.local` and replace the example values before deployment. `SENTRY_DSN` enables error monitoring; database snapshots are written to `server/backups` daily by default and old snapshots are trimmed according to `DB_BACKUP_RETENTION`.
+Run backend tests with `npm test`. Copy `.env.example` to `.env.local` and replace the example values before deployment. To enable the transfer-wallet game integration, configure `GAME_API_BASE_URL`, `GAME_OPERATOR_ID`, `GAME_SECRET`, and `GAME_SALT` in the server environment. Keep the provider secret and salt server-side. Users can return provider-wallet funds from the wallet dialog. `SENTRY_DSN` enables error monitoring; database snapshots are written to `server/backups` daily by default and old snapshots are trimmed according to `DB_BACKUP_RETENTION`.
+
+See the repository's [API Reference](../docs/API.md) and [Operations Guide](../docs/OPERATIONS.md) for game-wallet routes and deployment configuration.
