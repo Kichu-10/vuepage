@@ -20,9 +20,10 @@ process.env.HUIDU_PLAYER_PREFIX = "h2f9cc";
 process.env.GAME_CURRENCY_IN = "INR";
 process.env.GAME_CURRENCY_PK = "PKR";
 process.env.GAME_CURRENCY_NP = "NPR";
+process.env.HUIDU_CATALOG_CACHE_DIR = path.join(tempDir, "catalog-cache");
 
 const database = await import("../server/database.js");
-const { createAuthRouter, createAdminAuthRouter } = await import("../server/routers/auth.js");
+const { createAuthRouter, createAdminAuthRouter, googleVerificationFailure } = await import("../server/routers/auth.js");
 const { createWalletRouter } = await import("../server/routers/wallet.js");
 const { createAdminRouter } = await import("../server/routers/admin.js");
 const { createGamesRouter } = await import("../server/routers/games.js");
@@ -249,6 +250,18 @@ test("Google profile picture URLs persist in user records", () => {
   const pictureUrl = "https://lh3.googleusercontent.com/a/test-photo";
   resetDatabase({ users: [{ ...account, googlePictureUrl: pictureUrl }] });
   assert.equal(database.readDb().users[0].googlePictureUrl, pictureUrl);
+});
+
+test("Google clock-skew errors explain the fix without exposing token claims", () => {
+  const error = new Error(
+    'Token used too early, 1793692448.138 < 1793712847: {"email":"private@example.com","sub":"private-subject"}',
+  );
+  const failure = googleVerificationFailure(error);
+
+  assert.equal(failure.reason, "token_clock_ahead");
+  assert.equal(failure.skewHours, 5.7);
+  assert.match(failure.message, /automatic date, time, and time zone/i);
+  assert.doesNotMatch(JSON.stringify(failure), /private@example.com|private-subject/);
 });
 
 test("admin login works through the split router without weakening admin guards", async () => {

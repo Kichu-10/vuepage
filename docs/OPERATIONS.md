@@ -4,7 +4,7 @@
 
 - Node.js 22 or newer (the backend uses Node's built-in `node:sqlite` API).
 - npm.
-- Persistent writable storage for the SQLite file, uploads, and backups.
+- Persistent writable storage for the SQLite file, uploads, backups, and provider catalog cache.
 
 ## Local development
 
@@ -56,7 +56,7 @@ Account country selects the currency mapping: India (`IN`) uses INR, Pakistan (`
 
 Use long, unique secrets and restrict administrator access at the network layer for production. The sample values in `.env.example` are placeholders.
 
-To enable Google Sign-In, create a Google OAuth **Web application** client, set `GOOGLE_CLIENT_ID` to its client ID in `vue-app/.env.local`, and add each development/production site origin to the OAuth client's authorized JavaScript origins. Keep `GOOGLE_CLIENT_ID` the same for the API verifier and browser button; restart the API after changing it. The client ID is public configuration, not a secret. The OAuth flow currently asks the user to select India or Pakistan before continuing.
+To enable Google Sign-In, create a Google OAuth **Web application** client, set `GOOGLE_CLIENT_ID` to its client ID in `vue-app/.env.local`, and add each development/production site origin to the OAuth client's authorized JavaScript origins. Keep `GOOGLE_CLIENT_ID` the same for the API verifier and browser button; restart the API after changing it. The client ID is public configuration, not a secret. The OAuth flow currently asks the user to select India or Pakistan before continuing. Google ID tokens are time-checked: devices that generate future-dated tokens must enable automatic date, time, and time zone; do not disable token-time validation to work around clock errors.
 
 Promotions are managed in the administrator's **Promotions** section. Admins can add/edit offers, upload banner artwork, and activate or pause offers. Only active offer details are returned to authenticated users; banner images are public media. Include eligibility and complete terms in each offer. The app does not automatically grant promotional credits.
 
@@ -78,6 +78,7 @@ The CI workflow runs these checks on relevant pushes and pull requests.
 - Default database: `vue-app/server/database.sqlite`.
 - Default document uploads: `vue-app/server/uploads/`.
 - Default local snapshots: `vue-app/server/backups/`.
+- HUIDU catalog cache: `vue-app/server/cache/`; the backend retains the catalog for six hours and stores rate-limit cooldown state there.
 - The application creates a backup at startup and periodically thereafter.
 - Copy both the database and required uploads to protected off-host storage; snapshots on the application host do not protect against host or disk loss.
 - Restrict filesystem access to the database, uploaded identity documents, and backups.

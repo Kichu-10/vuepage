@@ -1,5 +1,9 @@
-import { createCipheriv, createDecipheriv, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { logger } from "../config/logger.js";
 
 export class GameProviderError extends Error {
   constructor(message, status = 502, code = undefined) {
@@ -201,6 +205,105 @@ async function listGamesForProvider(provider) {
 let gamesCache;
 let gamesCacheExpiresAt = 0;
 let pendingCatalog;
+let savedCatalogLoaded = false;
+let savedCatalogLoading;
+let catalogRetryAfter = 0;
+let lastCatalogError;
+
+const catalogCacheDurationMs = 6 * 60 * 60 * 1000;
+const catalogRetryCooldownMs = 15 * 60 * 1000;
+const catalogRequestIntervalMs = 1000;
+const catalogCacheSchema = z.object({
+  cachedAt: z.number().finite().optional(),
+  retryAfter: z.number().finite().optional(),
+  games: z.array(z.object({
+    id: z.string().min(1).max(120),
+    name: z.string().min(1).max(160),
+    provider: z.string().min(1).max(120),
+    providerCode: z.string().min(1).max(80),
+    gameType: z.string().max(80),
+    status: z.number().int(),
+  })).optional(),
+}).refine((value) => value.games !== undefined || value.retryAfter !== undefined);
+
+function catalogCachePath() {
+  const current = config();
+  const agencyKey = createHash("sha256")
+    .update(`${current.baseUrl}\n${current.agencyUid}`)
+    .digest("hex")
+    .slice(0, 16);
+  const cacheDirectory = process.env.HUIDU_CATALOG_CACHE_DIR
+    ? path.resolve(process.env.HUIDU_CATALOG_CACHE_DIR)
+    : path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "cache");
+  return path.join(cacheDirectory, `huidu-games-${agencyKey}.json`);
+}
+
+async function saveCatalogCache() {
+  if (!gamesCache && !catalogRetryAfter) return;
+  const filePath = catalogCachePath();
+  const temporaryPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await mkdir(path.dirname(filePath), { recursive: true });
+    const cache = {};
+    if (gamesCache) {
+      cache.cachedAt = gamesCacheExpiresAt - catalogCacheDurationMs;
+      cache.games = gamesCache;
+    }
+    if (catalogRetryAfter) cache.retryAfter = catalogRetryAfter;
+    await writeFile(temporaryPath, JSON.stringify(cache), { encoding: "utf8", mode: 0o600 });
+    await rename(temporaryPath, filePath);
+  } catch (error) {
+    logger.warn("game_catalog_cache_write_failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function loadSavedCatalog() {
+  if (savedCatalogLoaded) return;
+  if (!savedCatalogLoading) {
+    savedCatalogLoading = (async () => {
+      const filePath = catalogCachePath();
+      try {
+        const content = await readFile(filePath, "utf8");
+        const parsed = catalogCacheSchema.safeParse(JSON.parse(content));
+        if (!parsed.success) {
+          logger.warn("game_catalog_cache_invalid", { path: filePath });
+          return;
+        }
+        if (parsed.data.games && parsed.data.cachedAt) {
+          gamesCache = parsed.data.games;
+          gamesCacheExpiresAt = parsed.data.cachedAt + catalogCacheDurationMs;
+        }
+        catalogRetryAfter = parsed.data.retryAfter || 0;
+        if (catalogRetryAfter > Date.now()) {
+          lastCatalogError = new GameProviderError("HUIDU game catalog is cooling down after a rate limit", 503, 10030);
+        }
+        if (gamesCache) {
+          logger.info("game_catalog_cache_loaded", {
+            gameCount: gamesCache.length,
+            stale: gamesCacheExpiresAt <= Date.now(),
+          });
+        }
+      } catch (error) {
+        if (error?.code !== "ENOENT") {
+          logger.warn("game_catalog_cache_read_failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      } finally {
+        savedCatalogLoaded = true;
+      }
+    })().finally(() => {
+      savedCatalogLoading = undefined;
+    });
+  }
+  await savedCatalogLoading;
+}
+
+function catalogRetryDelay() {
+  return new Promise((resolve) => setTimeout(resolve, catalogRequestIntervalMs));
+}
 
 async function loadProviderGames() {
   const current = config();
@@ -216,25 +319,52 @@ async function loadProviderGames() {
   }).filter((provider) => provider.status === undefined || provider.status === 1);
 
   const games = [];
-  for (let index = 0; index < providers.length; index += 4) {
-    const batch = await Promise.all(providers.slice(index, index + 4).map(listGamesForProvider));
-    games.push(...batch.flat());
+  for (const [index, provider] of providers.entries()) {
+    if (index > 0) await catalogRetryDelay();
+    games.push(...await listGamesForProvider(provider));
   }
   return games;
 }
 
-export async function listProviderGames() {
-  if (gamesCache && gamesCacheExpiresAt > Date.now()) return gamesCache;
+async function refreshProviderGames() {
+  if (catalogRetryAfter > Date.now()) {
+    throw lastCatalogError || new GameProviderError("HUIDU game catalog is cooling down after a rate limit", 503, 10030);
+  }
   if (!pendingCatalog) {
     pendingCatalog = loadProviderGames().then((games) => {
       gamesCache = games;
-      gamesCacheExpiresAt = Date.now() + 60_000;
-      return games;
+      gamesCacheExpiresAt = Date.now() + catalogCacheDurationMs;
+      catalogRetryAfter = 0;
+      lastCatalogError = undefined;
+      return saveCatalogCache().then(() => games);
+    }).catch(async (error) => {
+      if (error instanceof GameProviderError && error.code === 10030) {
+        lastCatalogError = error;
+        catalogRetryAfter = Date.now() + catalogRetryCooldownMs;
+        await saveCatalogCache();
+      }
+      throw error;
     }).finally(() => {
       pendingCatalog = undefined;
     });
   }
   return pendingCatalog;
+}
+
+export async function listProviderGames() {
+  await loadSavedCatalog();
+  if (gamesCache && gamesCacheExpiresAt > Date.now()) return gamesCache;
+  if (gamesCache) {
+    if (catalogRetryAfter <= Date.now() && !pendingCatalog) {
+      void refreshProviderGames().catch((error) => {
+        logger.warn("game_catalog_refresh_failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+    return gamesCache;
+  }
+  return refreshProviderGames();
 }
 
 function amountCents(value, label) {

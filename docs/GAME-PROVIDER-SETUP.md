@@ -18,6 +18,8 @@ The default game currencies are INR for India, PKR for Pakistan, and NPR for exi
 
 HUIDU supplies the provider/game catalog (`GET /game/providers`, `GET /game/list`) and transfer-wallet API (`POST /game/v2`). Positive amounts fund the game wallet, negative amounts return funds, and zero queries its balance. Uncertain transfers remain pending and retry with the same transfer ID.
 
+The backend caches a successful catalog on disk for six hours, serves that cache while refreshing it, and spaces provider-list requests by one second. A `10030` rate-limit response starts a persisted 15-minute cooldown to prevent repeated requests from page reloads or API restarts. Keep `vue-app/server/cache/` on persistent writable storage. These defaults reduce request bursts but cannot override the agency limits enforced by HUIDU.
+
 **Current status:** Recent live catalog checks returned `HUIDU returned an invalid game entry` (HTTP 502). The catalog and game launches are not verified live; ask HUIDU to confirm the catalog response format and API access. Tests use mocked provider responses; do not treat them as live verification or test with real balances until HUIDU confirms access.
 
 Check local secret-file exclusion with:

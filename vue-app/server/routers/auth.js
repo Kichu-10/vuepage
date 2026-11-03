@@ -62,6 +62,30 @@ function hashOtp(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+export function googleVerificationFailure(error) {
+  const message = error instanceof Error ? error.message : "";
+  const earlyToken = message.match(/^Token used too early,\s*(\d+(?:\.\d+)?)\s*<\s*(\d+(?:\.\d+)?)/);
+  if (earlyToken) {
+    const skewSeconds = Math.max(0, Number(earlyToken[2]) - Number(earlyToken[1]));
+    const skewHours = Math.round((skewSeconds / 3600) * 10) / 10;
+    return {
+      reason: "token_clock_ahead",
+      skewHours,
+      message: `Google sign-in time is about ${skewHours} hours ahead of the server. Set automatic date, time, and time zone on the device used to sign in, then try again.`,
+    };
+  }
+  if (message.startsWith("Token used too late")) {
+    return { reason: "token_expired", message: "Google sign-in expired. Please try again." };
+  }
+  if (message.startsWith("Invalid token signature")) {
+    return {
+      reason: "invalid_token_signature",
+      message: "Google could not verify this sign-in. Please check the device time and try again.",
+    };
+  }
+  return { reason: "verification_failed", message: "Google verification failed. Please try again." };
+}
+
 function uniqueUsername(users, preferred) {
   const base = String(preferred || "user").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 20) || "user";
   let candidate = base;
@@ -221,8 +245,12 @@ export function createAuthRouter() {
         user: publicUser(user),
       });
     } catch (error) {
-      logger.warn("google_verification_failed", { error: error instanceof Error ? error.message : String(error) });
-      res.status(401).json({ error: "Google verification failed" });
+      const failure = googleVerificationFailure(error);
+      logger.warn("google_verification_failed", {
+        reason: failure.reason,
+        ...(failure.skewHours === undefined ? {} : { skewHours: failure.skewHours }),
+      });
+      res.status(401).json({ error: failure.message });
     }
   });
 
