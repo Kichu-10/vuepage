@@ -291,6 +291,11 @@
             <div class="account-identity"><span>Signed in as</span><strong>{{ user?.username }}</strong><small>{{ user?.email || "Email not set" }}</small></div>
             <button class="text-action" @click="modal = 'profile'">View profile</button>
           </section>
+          <section class="account-balance">
+            <Wallet :size="21" />
+            <span>Available balance</span>
+            <strong>{{ currencyLabel }} {{ formatMoney(balance) }}</strong>
+          </section>
           <label class="avatar-upload-button" :class="{ uploading: avatarUploading }">
             <UserRound :size="18" />
             {{ avatarUploading ? "Uploading picture..." : displayedAvatarUrl ? "Change profile picture" : "Upload profile picture" }}
@@ -1551,6 +1556,9 @@ button { cursor: pointer; }
 .signed-out-card p { max-width: 350px; margin: 0 0 6px; color: #748078; font-size: 13px; line-height: 1.5; }
 .transaction-list { max-height: none; }
 .account-card { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid #e1ebe2; border-radius: 16px; background: white; }
+.account-balance { display: flex; min-height: 64px; align-items: center; gap: 10px; padding: 12px 16px; border: 1px solid #d5e9d8; border-radius: 14px; color: #248b4b; background: linear-gradient(110deg, #f1fbf2, #ffffff); }
+.account-balance > span { flex: 1; color: #617469; font-size: 13px; font-weight: 650; }
+.account-balance > strong { color: #205a37; font-size: 18px; font-variant-numeric: tabular-nums; }
 .account-avatar, .profile-avatar-preview { display: grid; overflow: hidden; flex: 0 0 auto; place-items: center; border-radius: 50%; color: white; background: #24a85a; font-weight: 800; }
 .account-avatar { width: 60px; height: 60px; font-size: 24px; }
 .account-avatar img, .profile-avatar-preview img { width: 100%; height: 100%; object-fit: cover; }
