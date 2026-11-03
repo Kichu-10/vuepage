@@ -148,7 +148,7 @@ async function providerPost(path, parameters) {
     payload: encryptHuiduPayload(JSON.stringify({
       ...parameters,
       agency_uid: current.agencyUid,
-      timestamp,
+      timestamp: String(timestamp),
     }), current.aesKey),
   };
 
@@ -211,8 +211,8 @@ let catalogRetryAfter = 0;
 let lastCatalogError;
 
 const catalogCacheDurationMs = 6 * 60 * 60 * 1000;
-const catalogRetryCooldownMs = 15 * 60 * 1000;
-const catalogRequestIntervalMs = 1000;
+const catalogRetryCooldownMs = 60 * 60 * 1000;
+const catalogRequestIntervalMs = 5 * 1000;
 const catalogCacheSchema = z.object({
   cachedAt: z.number().finite().optional(),
   retryAfter: z.number().finite().optional(),

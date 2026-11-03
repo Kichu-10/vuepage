@@ -48,7 +48,7 @@ test("catalog refresh is paced and cached across service reloads", async () => {
     assert.equal(games[0].gameType, "");
     const gameListTimes = requestTimes.filter((request) => request.path === "/game/list").map((request) => request.time);
     assert.equal(gameListTimes.length, 2);
-    assert.ok(gameListTimes[1] - gameListTimes[0] >= 900);
+    assert.ok(gameListTimes[1] - gameListTimes[0] >= 4500);
 
     globalThis.fetch = async () => {
       throw new Error("Fresh saved catalog should not call HUIDU");
@@ -84,7 +84,7 @@ test("HUIDU rate-limit responses trigger a persisted cooldown", async () => {
 
     const cacheFile = path.join(cacheDirectory, fs.readdirSync(cacheDirectory)[0]);
     const savedState = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-    assert.ok(savedState.retryAfter > Date.now());
+    assert.ok(savedState.retryAfter - Date.now() >= 59 * 60 * 1000);
   } finally {
     globalThis.fetch = originalFetch;
     fs.rmSync(cacheDirectory, { recursive: true, force: true });

@@ -16,11 +16,11 @@ The URL must use HTTPS. The AES key must be exactly 32 UTF-8 bytes; the player p
 
 The default game currencies are INR for India, PKR for Pakistan, and NPR for existing Nepal accounts. New account country selection currently supports India and Pakistan. Set each `GAME_CURRENCY_*` value to the currency code enabled for your HUIDU agency if it differs from the default. These are provider currency codes; the customer interface displays INR and NPR as `Rs.` and PKR as `PKR`.
 
-HUIDU supplies the provider/game catalog (`GET /game/providers`, `GET /game/list`) and transfer-wallet API (`POST /game/v2`). Positive amounts fund the game wallet, negative amounts return funds, and zero queries its balance. Uncertain transfers remain pending and retry with the same transfer ID.
+HUIDU supplies the provider/game catalog (`GET /game/providers`, `GET /game/list`) and transfer-wallet API (`POST /game/v2`). Catalog calls pass the agency ID, language, and supplier code where required by HUIDU. Transfer requests use AES-256-ECB with PKCS padding; the outer and encrypted-payload millisecond timestamps are strings as shown in the API guide. Positive amounts fund the game wallet, negative amounts return funds, and zero queries its balance. Uncertain transfers remain pending and retry with the same transfer ID.
 
-The backend caches a successful catalog on disk for six hours, serves that cache while refreshing it, and spaces provider-list requests by one second. A `10030` rate-limit response starts a persisted 15-minute cooldown to prevent repeated requests from page reloads or API restarts. Keep `vue-app/server/cache/` on persistent writable storage. These defaults reduce request bursts but cannot override the agency limits enforced by HUIDU.
+The backend caches a successful catalog on disk for six hours, serves that cache while refreshing it, and spaces provider-list requests by five seconds. A `10030` rate-limit response starts a persisted one-hour cooldown to prevent repeated requests from page reloads or API restarts. Keep `vue-app/server/cache/` on persistent writable storage. These defaults reduce request bursts but cannot override the agency limits enforced by HUIDU.
 
-**Current status:** Recent live catalog checks returned `HUIDU returned an invalid game entry` (HTTP 502). The catalog and game launches are not verified live; ask HUIDU to confirm the catalog response format and API access. Tests use mocked provider responses; do not treat them as live verification or test with real balances until HUIDU confirms access.
+**Current status:** The latest local catalog check returned HUIDU error `10030` (“Too many requests”). The catalog and game launches are not currently verified live. Tests use mocked provider responses; do not treat them as live verification or test with real balances until HUIDU confirms access.
 
 Check local secret-file exclusion with:
 

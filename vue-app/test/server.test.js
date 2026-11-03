@@ -69,7 +69,8 @@ function decodeHuiduRequest(options) {
   const outer = JSON.parse(options.body);
   const payload = JSON.parse(decryptHuiduPayload(outer.payload, testAesKey));
   assert.equal(outer.agency_uid, process.env.HUIDU_AGENCY_UID);
-  assert.equal(outer.timestamp, String(payload.timestamp));
+  assert.equal(typeof payload.timestamp, "string");
+  assert.equal(outer.timestamp, payload.timestamp);
   assert.equal(payload.agency_uid, process.env.HUIDU_AGENCY_UID);
   return payload;
 }

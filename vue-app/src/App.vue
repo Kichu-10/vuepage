@@ -911,6 +911,8 @@ async function loadGames(): Promise<void> {
     const message = error instanceof Error ? error.message : "";
     gamesError.value = message === "Game provider is not configured"
       ? "Game catalog will appear after the provider is configured on the server."
+      : /too many requests|rate limit|cooling down/i.test(message)
+        ? "HUIDU has temporarily rate-limited game catalog requests. Please wait for the provider quota to reset; repeated refreshes will not restore access."
       : /invalid hash code/i.test(message)
         ? "HUIDU rejected the game-catalog request (error 1004: Invalid hash code). The provider must confirm the catalog API authentication or issue valid API access."
       : /HUIDU/i.test(message)
@@ -1675,37 +1677,53 @@ button { cursor: pointer; }
 @media (min-width: 760px) {
   body { background: #edf5ef; }
   .page-frame {
-    width: min(1180px, calc(100% - 32px));
-    margin: 16px auto 0;
-    border-radius: 24px 24px 0 0;
+    width: min(1440px, 100%);
+    margin: 0 auto;
+    border-radius: 0;
   }
-  .desktop-nav { display: flex; min-height: 54px; align-items: center; gap: 5px; padding: 0 24px; border-bottom: 1px solid #e8eee8; background: #fff; }
-  .desktop-nav button { padding: 9px 13px; border: 0; border-radius: 9px; color: #64736a; background: transparent; font-size: 13px; font-weight: 650; }
+  .desktop-nav { position: sticky; top: 0; z-index: 4; display: flex; min-height: 58px; align-items: center; gap: 7px; padding: 0 clamp(20px, 4vw, 52px); border-bottom: 1px solid #e8eee8; background: rgb(255 255 255 / 97%); box-shadow: 0 3px 12px rgb(34 91 51 / 5%); }
+  .desktop-nav button { min-height: 40px; padding: 9px 15px; border: 0; border-radius: 9px; color: #64736a; background: transparent; font-size: 14px; font-weight: 650; }
   .desktop-nav button.active { color: #168446; background: #eaf6ed; }
   .desktop-nav .desktop-auth { margin-left: auto; color: #fff; background: #22a85a; }
-  .topbar { height: 72px; padding: 8px 24px 12px; border-radius: 24px 24px 0 0; }
+  .menu-button { display: none; }
+  .topbar { height: 78px; gap: 14px; padding: 8px clamp(20px, 4vw, 52px) 12px; }
   .brand-emblem { width: 44px; height: 44px; flex-basis: 44px; }
-  .brand-wordmark { font-size: 21px; }
+  .public-brand { width: 150px; min-width: 150px; flex-basis: 150px; gap: 9px; }
+  .brand-wordmark { font-size: 23px; }
   .header-actions { max-width: 420px; gap: 8px; }
   .balance-button, .deposit-button { height: 42px; }
-  .search-wrap { padding-right: 24px; padding-left: 24px; }
-  .content { gap: 14px; padding: 14px 18px 24px; }
+  .search-wrap { padding-right: clamp(20px, 4vw, 52px); padding-left: clamp(20px, 4vw, 52px); }
+  .content { gap: 18px; padding: 20px clamp(20px, 4vw, 52px) 36px; }
   .promo-frame { padding: 10px; }
-  .hero { min-height: 0; }
-  .hero-copy { min-height: 0; }
-  .hero-with-art .hero-copy { max-width: 70%; }
+  .hero { height: clamp(280px, 27vw, 380px); min-height: 280px; max-height: none; aspect-ratio: auto; }
+  .hero-copy { min-height: 0; padding-right: clamp(24px, 5vw, 64px); padding-left: clamp(24px, 5vw, 64px); }
+  .hero-title { font-size: clamp(20px, 2.2vw, 30px); }
+  .hero-title strong { font-size: clamp(40px, 5vw, 68px); }
+  .hero-subtitle { font-size: clamp(14px, 1.3vw, 18px); }
+  .hero-with-art .hero-copy { max-width: 64%; }
   .hero-art { width: 48%; object-position: center; }
-  .categories { min-height: 104px; padding-right: 18px; padding-left: 18px; }
-  .category { max-width: 130px; }
+  .welcome-banner { min-height: clamp(280px, 28vw, 380px); padding: clamp(28px, 5vw, 64px); }
+  .welcome-banner-copy { max-width: 58%; }
+  .welcome-banner h1 { font-size: clamp(34px, 4vw, 54px); }
+  .welcome-banner p { font-size: 16px; }
+  .categories { min-height: 112px; padding-right: 18px; padding-left: 18px; }
+  .category-list { justify-content: center; gap: clamp(12px, 2vw, 28px); }
+  .category { max-width: 140px; min-width: 80px; }
   .category-image { width: 50px; height: 50px; }
-  .game-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+  .category-label { font-size: 13px; }
+  .jackpot { max-height: 400px; }
+  .game-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
   .game-card { border-radius: 18px; }
   .games-panel { padding: 16px 14px 14px; }
+  .section-heading { margin-bottom: 14px; }
+  .section-heading h2 { font-size: 19px; }
+  .promotion-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .account-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .modal-backdrop { align-items: center; }
-  .modal-sheet { max-height: 88vh; border-radius: 24px; }
+  .modal-sheet { width: min(640px, calc(100% - 48px)); max-height: 88vh; border-radius: 24px; }
   .bottom-nav { display: none; }
   .page-frame { padding-bottom: 20px; }
-  .promotion-banner { min-height: 245px; align-items: flex-start; }
+  .promotion-banner { min-height: 270px; align-items: flex-start; }
   .promotion-full-creative { min-height: 0; }
   .promotion-banner-art { width: 52%; }
   .promotion-banner-copy { width: 76%; padding: 16px; }
@@ -1713,7 +1731,7 @@ button { cursor: pointer; }
   .page-section { gap: 18px; padding-right: 4px; padding-left: 4px; }
 }
 @media (min-width: 1100px) {
-  .game-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .game-grid { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
 }
 @media (max-width: 370px) {
   .topbar { gap: 4px; padding-right: 8px; padding-left: 8px; }
