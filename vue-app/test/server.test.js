@@ -741,6 +741,11 @@ test("HUIDU maps supplier game UIDs and launches with an atomic wallet credit", 
             game_name: "Queen of Bounty",
             game_type: "Slot Game",
             status: 1,
+          }, {
+            game_uid: "null-game-type",
+            game_name: "Game without a type",
+            game_type: null,
+            status: 1,
           }],
         }),
       };
@@ -771,6 +776,13 @@ test("HUIDU maps supplier game UIDs and launches with an atomic wallet credit", 
       provider: "PGSoft",
       providerCode: "pg",
       gameType: "Slot Game",
+      status: 0,
+    }, {
+      id: "null-game-type",
+      name: "Game without a type",
+      provider: "PGSoft",
+      providerCode: "pg",
+      gameType: "",
       status: 0,
     }]);
 

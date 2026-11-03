@@ -172,7 +172,7 @@ const providerSchema = z.object({
 const providerGameSchema = z.object({
   game_uid: z.union([z.string(), z.number()]).transform(String).pipe(z.string().trim().min(1).max(120)),
   game_name: z.string().trim().min(1).max(160),
-  game_type: z.string().trim().max(80).optional().default(""),
+  game_type: z.preprocess((value) => value === null ? "" : value, z.string().trim().max(80).optional().default("")),
   status: z.coerce.number().int(),
 });
 

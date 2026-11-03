@@ -1,0 +1,219 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="500" viewBox="0 0 1100 500" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="30" y1="30" x2="1058" y2="475" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#087B42"/>
+      <stop offset=".48" stop-color="#075B37"/>
+      <stop offset="1" stop-color="#043D2B"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="326" y1="15" x2="855" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#58F39B" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#17B96A" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="52" y1="252" x2="136" y2="363" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF1A2"/>
+      <stop offset=".38" stop-color="#FFD85B"/>
+      <stop offset="1" stop-color="#D89118"/>
+    </linearGradient>
+    <linearGradient id="goldDark" x1="817" y1="365" x2="1009" y2="461" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE889"/>
+      <stop offset=".48" stop-color="#E9A92A"/>
+      <stop offset="1" stop-color="#A95708"/>
+    </linearGradient>
+    <linearGradient id="fabric" x1="744" y1="259" x2="922" y2="486" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#16A75B"/>
+      <stop offset=".48" stop-color="#08733F"/>
+      <stop offset="1" stop-color="#034B32"/>
+    </linearGradient>
+    <linearGradient id="phone" x1="648" y1="193" x2="703" y2="301" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1A2422"/>
+      <stop offset="1" stop-color="#050B0A"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0" cy="0" r="1" gradientTransform="matrix(216 0 0 185 817 242)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A8FFCE" stop-opacity=".23"/>
+      <stop offset="1" stop-color="#42E891" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.25" fill="#CBFFE0" fill-opacity=".12"/>
+    </pattern>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="9"/>
+      <feOffset dy="9"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".28"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="11"/>
+    </filter>
+    <clipPath id="clip">
+      <rect x="10" y="10" width="1080" height="480" rx="34"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#clip)">
+    <rect x="10" y="10" width="1080" height="480" rx="34" fill="url(#bg)"/>
+    <rect x="10" y="10" width="1080" height="480" fill="url(#dots)"/>
+    <ellipse cx="817" cy="242" rx="280" ry="237" fill="url(#halo)"/>
+    <path d="M408 10h682v480H329c124-92 201-242 79-480Z" fill="url(#glow)"/>
+    <path d="M493 24c93 39 146 102 160 185M432 56c90 52 137 119 146 203M1006 34c-32 89-79 148-145 188" stroke="#D3FFE5" stroke-opacity=".08" stroke-width="2"/>
+    <circle cx="556" cy="102" r="3" fill="#C5FFD8" fill-opacity=".7"/>
+    <circle cx="594" cy="133" r="2" fill="#C5FFD8" fill-opacity=".6"/>
+    <circle cx="1004" cy="130" r="3" fill="#FFE999"/>
+    <circle cx="965" cy="98" r="2" fill="#FFE999"/>
+    <path d="M580 172c-13 29-20 66-18 101" stroke="#A7FFC9" stroke-opacity=".22" stroke-width="2"/>
+
+    <!-- Pakistan flag -->
+    <g transform="rotate(-8 953 108)">
+      <path d="M925 44v142" stroke="#D5B164" stroke-width="5"/>
+      <path d="M930 52c45 3 81 9 125 0v103c-44 10-81 4-125 0V52Z" fill="#08783D"/>
+      <path d="M930 52h19v103h-19V52Z" fill="#F8F7EA"/>
+      <path d="M1009 74c-19-9-40 1-44 21-4 19 10 36 29 36 15 0 26-10 29-23-8 9-21 12-32 7-14-6-20-23-13-37 6-12 18-17 31-14Z" fill="#FFFCEB"/>
+      <path d="m1035 72 3 8 9 .5-7 5.3 2.4 8.5-7.4-5-7.4 5 2.4-8.5-7-5.3 8.8-.5 3.2-8Z" fill="#FFFCEB"/>
+    </g>
+
+    <!-- Golden 9 emblem -->
+    <g filter="url(#shadow)">
+      <circle cx="101" cy="320" r="59" fill="#073C2A" fill-opacity=".5"/>
+      <path d="m58 263 8 14 15-3-7 13 10 11-16-1-8 14-3-16-15-6 14-7 2-19Z" fill="url(#gold)"/>
+      <path d="m119 258 7 15 16 1-12 10 4 16-14-8-14 8 4-16-12-10 16-1 5-15Z" fill="url(#gold)"/>
+      <path d="M99 282c-19 0-33 14-33 34 0 19 13 32 30 32 8 0 15-3 20-9-3 14-12 21-26 21-8 0-15-2-22-7l-6 15c8 5 18 8 29 8 31 0 49-21 49-57 0-23-14-37-41-37Zm-1 16c10 0 16 7 16 18 0 10-7 17-17 17-9 0-15-7-15-17s6-18 16-18Z" fill="url(#gold)"/>
+      <path d="M100 291c15 0 25 10 25 25" stroke="#FFF4B8" stroke-opacity=".8" stroke-width="3" stroke-linecap="round"/>
+    </g>
+
+    <!-- Offer copy -->
+    <g font-family="Arial, Helvetica, sans-serif">
+      <text x="177" y="114" fill="#E8FFF0" font-size="24" font-weight="700" letter-spacing="3">WELCOME BONUS</text>
+      <path d="M178 130h75" stroke="#FFD75E" stroke-width="4" stroke-linecap="round"/>
+      <text x="173" y="207" fill="#FFFFFF" font-size="74" font-weight="800" letter-spacing="-2">Get 100%</text>
+      <text x="179" y="258" fill="#C7FFDB" font-size="38" font-weight="700">Bonus</text>
+      <text x="179" y="306" fill="#FFFFFF" font-size="34" font-weight="700" letter-spacing="-.5">on Your First Deposit</text>
+      <text x="181" y="348" fill="#C6F5D4" font-size="19" font-weight="700" letter-spacing="3">UP TO</text>
+      <text x="177" y="402" fill="#FFE177" font-size="59" font-weight="800" letter-spacing="-1">RS. 50,000</text>
+    </g>
+
+    <!-- Claim button -->
+    <g filter="url(#shadow)">
+      <rect x="178" y="423" width="232" height="51" rx="25.5" fill="#20C66B"/>
+      <rect x="179.5" y="424.5" width="229" height="48" rx="24" stroke="#9DFFC1" stroke-opacity=".58" stroke-width="3"/>
+      <text x="202" y="456" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700">Claim Now</text>
+      <circle cx="378" cy="448" r="16" fill="#F5FFF8"/>
+      <path d="M372 448h11m0 0-5-5m5 5-5 5" stroke="#10A84F" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <!-- Cash bundles behind the character -->
+    <g filter="url(#shadow)">
+      <g transform="translate(824 315) rotate(-8)">
+        <rect x="0" y="14" width="108" height="58" rx="7" fill="#A9C89A"/>
+        <path d="M7 22h94v42H7z" fill="#D6E4B7"/>
+        <path d="M17 29h73v28H17z" fill="#A4C58F"/>
+        <circle cx="53" cy="43" r="10" fill="#668A5D"/>
+        <path d="M52 34v18m-5-13h8m-8 8h8" stroke="#E8F0CB" stroke-width="2"/>
+        <path d="M8 16h92v8H8zM8 64h92v7H8z" fill="#FFF0A2"/>
+      </g>
+      <g transform="translate(928 276) rotate(7)">
+        <rect x="0" y="12" width="112" height="64" rx="7" fill="#9FBE8D"/>
+        <path d="M7 20h98v48H7z" fill="#D9E7BB"/>
+        <path d="M18 28h76v32H18z" fill="#A8C894"/>
+        <circle cx="56" cy="44" r="11" fill="#63865A"/>
+        <path d="M55 35v18m-5-13h9m-9 8h9" stroke="#F0F5D7" stroke-width="2"/>
+        <path d="M8 14h96v8H8zM8 68h96v7H8z" fill="#FFF0A2"/>
+      </g>
+      <g transform="translate(779 361) rotate(4)">
+        <rect x="0" y="11" width="122" height="62" rx="7" fill="#9FBE8D"/>
+        <path d="M7 19h108v47H7z" fill="#DDE8BE"/>
+        <path d="M19 27h83v31H19z" fill="#A6C38F"/>
+        <circle cx="61" cy="42" r="11" fill="#64875A"/>
+        <path d="M60 33v18m-5-13h9m-9 8h9" stroke="#F0F5D7" stroke-width="2"/>
+        <path d="M8 13h106v8H8zM8 66h106v7H8z" fill="#FFF0A2"/>
+      </g>
+    </g>
+
+    <!-- Woman: hair, face and earrings -->
+    <g filter="url(#shadow)">
+      <path d="M792 132c-1-42 26-71 65-71 42 0 68 31 64 79l-6 95-123 4v-107Z" fill="#20160F"/>
+      <path d="M796 143c-17 18-18 48-7 70l13 39 42-11-16-109-32 11Z" fill="#26180F"/>
+      <path d="M880 112c22-3 38 11 42 35 6 36-8 81-35 104-18 15-45 15-64-1-21-19-31-54-26-86 5-31 31-55 83-52Z" fill="#D58D64"/>
+      <path d="M802 137c3-37 26-59 60-59 29 0 48 15 57 43-20-7-33-19-43-31-12 22-38 36-74 41Z" fill="#21170F"/>
+      <path d="M799 162c-4-10-12-11-16-4-5 9 2 24 11 27M891 162c5-10 13-10 17-2 4 9-3 23-12 25" fill="#D58D64"/>
+      <path d="M813 166c6-5 14-5 20-1m31-1c7-5 15-5 21 0" stroke="#4E2B1D" stroke-width="3" stroke-linecap="round"/>
+      <path d="M817 176c5 4 11 4 16 0m35 0c5 4 11 4 16 0" stroke="#382119" stroke-width="3" stroke-linecap="round"/>
+      <path d="M842 175c-2 12-4 18-9 24 5 4 10 5 16 2" stroke="#A85F45" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M833 218c11 9 25 9 36-1" stroke="#913E3B" stroke-width="3" stroke-linecap="round"/>
+      <path d="M835 220c9 5 20 5 29 0" stroke="#FFF0E3" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="798" cy="203" r="5" fill="#F6D46A"/>
+      <circle cx="895" cy="202" r="5" fill="#F6D46A"/>
+      <path d="M797 206v16l7 8 7-8v-16m77 0v16l7 8 7-8v-16" stroke="#E5B843" stroke-width="2"/>
+    </g>
+
+    <!-- Hair details -->
+    <path d="M794 135c-8 27 1 57 13 77 5-14 7-25 7-38-2-18 8-35 24-42-10 20-5 48 8 66 8-26 24-45 46-54-9-15-17-23-30-32-14 16-38 25-68 23Z" fill="#2B1A10"/>
+    <path d="M799 148c-5 21 0 42 6 54m82-67c11 16 15 33 12 50" stroke="#67432B" stroke-opacity=".7" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- Neck and elegant green outfit -->
+    <path d="M823 241v37c0 11 11 19 24 19 14 0 26-8 26-19v-38l-50 1Z" fill="#C77C58"/>
+    <path d="M789 271c19-20 38-25 57-23 23 2 42 11 61 30l44 137-179 36-42-104 59-76Z" fill="url(#fabric)"/>
+    <path d="M822 254c10 17 20 27 35 32l-21 33-27-43 13-22Zm43 4c-4 13-12 23-24 28l23 32 27-44-26-16Z" fill="#E9C45E"/>
+    <path d="m817 271 18 54m48-56-24 56m-19-1-12 115m41-115 18 116" stroke="#E9C45E" stroke-opacity=".9" stroke-width="3"/>
+    <path d="M754 384c28 17 61 26 96 24 34-1 64-11 89-29" stroke="#41D487" stroke-opacity=".55" stroke-width="3"/>
+    <path d="M778 286c-18 28-25 64-20 102m127-106c21 32 30 74 28 116" stroke="#82F2B1" stroke-opacity=".25" stroke-width="3"/>
+    <path d="M762 311c23 22 38 42 46 65m95-70c-21 28-34 51-42 76" stroke="#F3D779" stroke-opacity=".62" stroke-width="2"/>
+    <circle cx="852" cy="345" r="4" fill="#FFE99A"/>
+    <circle cx="852" cy="359" r="3" fill="#FFE99A"/>
+    <circle cx="852" cy="372" r="3" fill="#FFE99A"/>
+
+    <!-- Arm holding the phone -->
+    <path d="M788 284c-23 8-36 24-48 43l-23 36c-6 9-1 19 8 20 7 1 12-5 17-12l29-34 39-21-22-32Z" fill="#D58D64"/>
+    <path d="m744 356 29-37 34-17" stroke="#E6A47A" stroke-width="5" stroke-linecap="round"/>
+    <path d="M733 355c-6 4-11 10-14 16m24-22c-4 8-8 16-11 23m22-27c-3 8-5 15-6 22" stroke="#C77C58" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- Smartphone -->
+    <g transform="rotate(-3 672 250)" filter="url(#shadow)">
+      <rect x="643" y="187" width="57" height="111" rx="10" fill="#050A09" stroke="#B6E9C5" stroke-width="2"/>
+      <rect x="648" y="196" width="47" height="91" rx="5" fill="url(#phone)"/>
+      <rect x="660" y="191" width="20" height="2.5" rx="1.25" fill="#66796F"/>
+      <circle cx="671.5" cy="278" r="12" fill="#D8AD42"/>
+      <path d="M672 267c-5 0-8 4-8 9s3 8 7 8c2 0 4-1 5-3-1 4-3 5-7 4l-2 3c7 3 13-2 13-11 0-6-3-10-8-10Zm0 4c2 0 3 2 3 4s-1 4-3 4-3-2-3-4 1-4 3-4Z" fill="#145C35"/>
+      <text x="671" y="216" text-anchor="middle" fill="#DBFFE6" font-family="Arial, Helvetica, sans-serif" font-size="6" font-weight="700">B9 GAME</text>
+    </g>
+
+    <!-- Free hand gesturing toward the offer -->
+    <path d="M905 291c13 4 25 11 34 20l22 22c7 7 5 17-3 21-6 3-12 0-17-6l-24-20-24-10 12-27Z" fill="#D58D64"/>
+    <path d="M954 329c8 1 15-2 20-8 4-4 9-2 10 3 1 5-2 10-8 14l-11 7m-17-26c6 0 12-3 16-8m-22 4c5-1 10-4 13-8" stroke="#C77C58" stroke-width="3" stroke-linecap="round"/>
+    <path d="M916 293c7-5 15-5 22 0l-8 11-17-2 3-9Z" fill="#E9C45E"/>
+
+    <!-- Gold coins -->
+    <g filter="url(#shadow)">
+      <ellipse cx="764" cy="447" rx="40" ry="11" fill="#A9630D"/>
+      <ellipse cx="764" cy="439" rx="40" ry="11" fill="#F3BD3E"/>
+      <ellipse cx="764" cy="431" rx="36" ry="10" fill="#D88C1A"/>
+      <ellipse cx="764" cy="425" rx="36" ry="10" fill="#FFD65A"/>
+      <ellipse cx="764" cy="425" rx="25" ry="6" stroke="#FFF0A0" stroke-width="2"/>
+      <ellipse cx="1000" cy="244" rx="22" ry="7" transform="rotate(26 1000 244)" fill="#D78E1A"/>
+      <ellipse cx="1000" cy="240" rx="22" ry="7" transform="rotate(26 1000 240)" fill="#FFD65A"/>
+      <ellipse cx="1000" cy="240" rx="13" ry="4" transform="rotate(26 1000 240)" stroke="#FFF0A0" stroke-width="2"/>
+      <ellipse cx="608" cy="181" rx="20" ry="7" transform="rotate(25 608 181)" fill="#D78E1A"/>
+      <ellipse cx="608" cy="177" rx="20" ry="7" transform="rotate(25 608 177)" fill="#FFD65A"/>
+      <ellipse cx="608" cy="177" rx="12" ry="4" transform="rotate(25 608 177)" stroke="#FFF0A0" stroke-width="2"/>
+      <ellipse cx="1035" cy="341" rx="23" ry="7" transform="rotate(-15 1035 341)" fill="#C97B12"/>
+      <ellipse cx="1035" cy="336" rx="23" ry="7" transform="rotate(-15 1035 336)" fill="#FFD65A"/>
+      <ellipse cx="1035" cy="336" rx="13" ry="4" transform="rotate(-15 1035 336)" stroke="#FFF0A0" stroke-width="2"/>
+    </g>
+
+    <!-- Treasure chest -->
+    <g filter="url(#shadow)">
+      <path d="M872 388c0-22 19-40 43-40h68c24 0 43 18 43 40v60H872v-60Z" fill="url(#goldDark)"/>
+      <path d="M872 388c0-22 19-40 43-40h68c24 0 43 18 43 40v10H872v-10Z" fill="#FFD65E"/>
+      <path d="M883 391c0-16 14-29 31-29h70c17 0 31 13 31 29v11H883v-11Z" fill="#BF7417"/>
+      <path d="M872 399h154v58H872v-58Z" fill="#B96712"/>
+      <path d="M884 404h130v47H884v-47Z" fill="url(#goldDark)"/>
+      <path d="M884 404h130v10H884v-10Z" fill="#FFE38A"/>
+      <path d="M914 401h19v56h-19zm51 0h19v56h-19z" fill="#F5C74D"/>
+      <path d="M942 420h16v28h-16z" fill="#80500E"/>
+      <rect x="938" y="416" width="24" height="20" rx="4" fill="#FFE27A" stroke="#A75C0D" stroke-width="3"/>
+      <path d="M950 421v9" stroke="#7D4A0B" stroke-width="3" stroke-linecap="round"/>
+      <text x="948" y="448" text-anchor="middle" fill="#FFF0AA" font-family="Georgia, serif" font-size="12" font-weight="700">B9 GOLD</text>
+    </g>
+    <path d="M843 463h216" stroke="#F8D56A" stroke-opacity=".55" stroke-width="2"/>
+  </g>
+
+  <rect x="10.5" y="10.5" width="1079" height="479" rx="33.5" stroke="#A7FFD0" stroke-opacity=".32"/>
+</svg>
