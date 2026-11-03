@@ -71,7 +71,7 @@ npm test
 npm run build
 ```
 
-The CI workflow runs these checks on relevant pushes and pull requests.
+The workflow definition is currently stored at [`docs/ci.yml`](./ci.yml). GitHub Actions only runs workflow files under `.github/workflows/`; place the file there to enable automatic checks on pushes and pull requests.
 
 ## Database and backups
 

@@ -35,7 +35,7 @@ New account registration and Google Sign-In country selection support India and 
 
 - User and administrator APIs require JWTs; administrator routes also enforce the admin role and optional IP allowlisting.
 - Keep secrets in the server environment or ignored `vue-app/.env.local`; never put them in frontend variables or source control.
-- HUIDU uses AES-256-ECB encrypted transfer requests. Recent live catalog checks returned an invalid game-entry response, so live catalog and game launches are not verified. See the [provider setup guide](./docs/GAME-PROVIDER-SETUP.md).
+- HUIDU uses AES-256-ECB encrypted transfer requests. The latest local catalog check was rate-limited with HUIDU error `10030`; live catalog and game launches are not currently verified. See the [provider setup guide](./docs/GAME-PROVIDER-SETUP.md).
 - Banner images are public media; identity documents and payment proofs require administrator authorization.
 
 ## Run and validate
