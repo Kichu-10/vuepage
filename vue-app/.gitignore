@@ -9,3 +9,5 @@ server/database.sqlite-wal
 server/backups/
 server/cache/
 server/uploads/
+test-results/
+playwright-report/
