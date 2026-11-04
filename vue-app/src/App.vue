@@ -53,15 +53,40 @@
           </div>
         </div>
       </section>
-      <section v-else class="welcome-banner">
-        <img :src="welcomeBanner" alt="B9 Game artwork featuring a woman" class="welcome-banner-image" />
-        <div class="welcome-banner-copy"><span class="eyebrow">WELCOME TO B9 GAME</span><h1>Find your next game</h1><p>Browse games, manage your account, and view member offers after signing in.</p></div>
-        <button v-if="!signedIn" class="primary-button" @click="showAuth">Sign in</button>
-        <button v-else class="primary-button" @click="navigateTo('/games')">Browse games</button>
-      </section>
+      <BonusBanner
+        v-else
+        :slides="bannerSlides"
+        :active-index="homePromotionIndex"
+        @claim="navigateTo('/wallet')"
+        @navigate="navigateTo"
+        @slide-change="changeBannerSlide"
+      />
       <section v-if="maintenanceMode" class="maintenance-banner" role="status">
         Scheduled maintenance is active. Transactions and support may experience delays.
       </section>
+
+      <section class="jackpot" aria-label="Jackpot">
+        <img :src="jackpotBanner" alt="JACKPOT" class="jackpot-banner" />
+        <div class="jackpot-value">{{ jackpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
+      </section>
+
+      <nav class="categories" aria-label="Game categories">
+        <button class="category-arrow" aria-label="Scroll categories left" @click="scrollCategories(-1)"><ChevronLeft :size="22" /></button>
+        <div ref="homeCategoryList" class="category-list">
+          <button
+            v-for="category in gameCategories"
+            :key="category.label"
+            class="category"
+            :class="{ selected: category.label === selectedCategory }"
+            :aria-pressed="category.label === selectedCategory"
+            @click="selectCategory(category.label)"
+          >
+            <span class="category-icon"><img :src="category.image" :alt="category.label" class="category-image" /></span>
+            <span class="category-label">{{ category.label }}</span>
+          </button>
+        </div>
+        <button class="category-arrow" aria-label="Scroll categories right" @click="scrollCategories(1)"><ChevronRight :size="22" /></button>
+      </nav>
 
       <section class="announcement" aria-label="Latest announcement">
         <Volume2 class="announcement-volume" :size="20" :stroke-width="2.6" />
@@ -72,61 +97,78 @@
         </button>
       </section>
 
-      <nav class="categories" aria-label="Game categories">
-        <button class="category-arrow" aria-label="Scroll categories left" @click="scrollCategories(-1)"><ChevronLeft :size="22" /></button>
-        <div ref="categoryList" class="category-list">
-          <button
-            v-for="category in categoryItems"
-            :key="category.label"
-            class="category"
-            :class="{ selected: category.label === selectedCategory }"
-            @click="selectCategory(category.label)"
-          >
-            <span class="category-icon">
-              <img :src="category.image" :alt="category.label" class="category-image" />
-            </span>
-            <span class="category-label">{{ category.label }}</span>
-          </button>
-        </div>
-        <button class="category-arrow" aria-label="Scroll categories right" @click="scrollCategories(1)"><ChevronRight :size="22" /></button>
-      </nav>
-
-      <section class="jackpot" aria-label="Jackpot">
-        <img :src="jackpotBanner" alt="JACKPOT" class="jackpot-banner" />
-        <div class="jackpot-value">{{ jackpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
-      </section>
       </template>
 
       <template v-if="currentPage === 'games'">
         <section v-if="maintenanceMode" class="maintenance-banner" role="status">
           Scheduled maintenance is active. Transactions and support may experience delays.
         </section>
+        <section class="games-heading">
+          <div>
+            <span class="eyebrow">GAME LOBBY</span>
+            <h1>All Games</h1>
+            <p>Browse the complete game catalog by category or provider.</p>
+          </div>
+          <span class="games-total">{{ gamesLoading ? "Loading…" : `${games.length.toLocaleString()} games` }}</span>
+        </section>
         <nav class="categories" aria-label="Game categories">
           <button class="category-arrow" aria-label="Scroll categories left" @click="scrollCategories(-1)"><ChevronLeft :size="22" /></button>
-          <div ref="categoryList" class="category-list">
-            <button v-for="category in categoryItems" :key="category.label" class="category" :class="{ selected: category.label === selectedCategory }" @click="selectCategory(category.label)">
+          <div ref="gameCategoryList" class="category-list">
+            <button v-for="category in gameCategories" :key="category.label" class="category" :class="{ selected: category.label === selectedCategory }" :aria-pressed="category.label === selectedCategory" @click="selectCategory(category.label)">
               <span class="category-icon"><img :src="category.image" :alt="category.label" class="category-image" /></span>
               <span class="category-label">{{ category.label }}</span>
             </button>
           </div>
           <button class="category-arrow" aria-label="Scroll categories right" @click="scrollCategories(1)"><ChevronRight :size="22" /></button>
         </nav>
-        <section class="jackpot" aria-label="Jackpot">
-          <img :src="jackpotBanner" alt="JACKPOT" class="jackpot-banner" />
-          <div class="jackpot-value">{{ jackpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
-        </section>
+        <div class="games-toolbar">
+          <label class="games-search">
+            <Search :size="18" aria-hidden="true" />
+            <input v-model="query" type="search" placeholder="Search games or providers" aria-label="Search games or providers" />
+            <button v-if="query" type="button" aria-label="Clear game search" @click="query = ''"><X :size="17" /></button>
+          </label>
+          <label class="provider-filter">
+            <span>Provider</span>
+            <select v-model="selectedProvider" aria-label="Filter by provider">
+              <option value="">All providers</option>
+              <option v-for="provider in gameProviders" :key="provider" :value="provider">{{ provider }}</option>
+            </select>
+          </label>
+          <label class="sort-filter">
+            <span>Sort</span>
+            <select v-model="gameSort" aria-label="Sort games">
+              <option value="popular">Popular</option>
+              <option value="name">Name A–Z</option>
+              <option value="provider">Provider</option>
+            </select>
+          </label>
+        </div>
+        <div class="games-summary" aria-live="polite">
+          <span>{{ filteredGameCount }} games</span>
+          <button v-if="selectedCategory !== 'Popular' || selectedProvider || query" type="button" @click="resetGameFilters">Clear filters</button>
+        </div>
+        <p v-if="gamesLoading && games.length === 0" class="empty-state" role="status">Loading the full game catalog…</p>
+        <div v-else-if="gamesError" class="catalog-error" role="alert">
+          <p>{{ gamesError }}</p>
+          <button type="button" @click="loadGames">Try again</button>
+        </div>
+        <div v-else-if="games.length === 0" class="catalog-empty">
+          <h2>No games are available yet</h2>
+          <p>The game provider has not returned a catalog. Please try again later.</p>
+          <button type="button" @click="loadGames">Reload games</button>
+        </div>
       </template>
 
-      <section v-if="currentPage === 'home' || currentPage === 'games'" class="games-panel">
+      <section v-if="currentPage === 'home' || currentPage === 'games'" class="games-panel" :class="{ 'games-panel-full': currentPage === 'games' }">
         <div class="section-heading">
-          <h2><Flame class="section-flame" :size="27" :fill="'currentColor'" />{{ query ? "Results" : selectedCategory }}</h2>
+          <h2><Flame class="section-flame" :size="27" :fill="'currentColor'" />{{ query || selectedProvider ? "Results" : selectedCategory === "Popular" ? "All games" : selectedCategory }}</h2>
           <button v-if="currentPage === 'home'" class="view-all" @click="navigateTo('/games')">
             View All <ChevronRight :size="17" />
           </button>
         </div>
-        <p v-if="gamesLoading" class="empty-state">Loading games...</p>
-        <p v-else-if="gamesError" class="empty-state">{{ gamesError }}</p>
-        <p v-else-if="visibleGames.length === 0" class="empty-state">No games found</p>
+        <p v-if="currentPage === 'home' && gamesLoading && games.length === 0" class="empty-state">Loading games...</p>
+        <p v-else-if="currentPage === 'home' && gamesError" class="empty-state">{{ gamesError }}</p>
+        <p v-else-if="!gamesLoading && !gamesError && visibleGames.length === 0" class="empty-state">No games found</p>
         <div class="game-grid">
           <article
             v-for="game in visibleGames"
@@ -141,7 +183,7 @@
             @keydown.enter="play(game)"
             @keydown.space.prevent="play(game)"
           >
-            <img :src="game.provider.toLowerCase().includes('pg') || game.gameType.toLowerCase().includes('slot') ? slot : fish" :alt="game.name" loading="lazy" />
+            <img :src="gameArtwork(game)" :alt="game.name" loading="lazy" />
             <div class="game-shade" />
             <span class="game-brand">{{ game.provider }}</span>
             <span class="game-art-title" aria-hidden="true">{{ game.name }}</span>
@@ -151,8 +193,25 @@
               class="favorite-button"
               :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'"
               @click.stop="toggleFavorite(game.id)"
-            ><Star :size="17" :fill="favorites.includes(game.id) ? 'currentColor' : 'currentColor'" /></button>
+            ><Star :size="17" :fill="favorites.includes(game.id) ? 'currentColor' : 'none'" /></button>
           </article>
+        </div>
+        <div v-if="currentPage === 'games' && gamesLoading && visibleGames.length > 0" class="games-loading-more" role="status" aria-label="Loading more games">
+          <span class="loading-spinner" aria-hidden="true"></span>
+          <span>Loading more games…</span>
+        </div>
+        <div
+          v-if="currentPage === 'games' && !gamesLoading && !gamesError && hasMoreGames"
+          ref="gamesLoadSentinel"
+          class="games-load-sentinel"
+          aria-hidden="true"
+        ></div>
+        <div v-if="currentPage === 'games' && !gamesLoading && !gamesError && games.length > 0 && !hasMoreGames" class="games-end-message" role="status">
+          You’ve reached the end of the game list.
+        </div>
+        <div v-if="currentPage === 'games' && gamesError && games.length > 0" class="catalog-error games-load-error" role="alert">
+          <p>{{ gamesError }}</p>
+          <button type="button" @click="loadGames">Try again</button>
         </div>
       </section>
 
@@ -476,6 +535,7 @@
 
         <div v-else-if="modal === 'inbox'" class="message-list">
           <p v-if="inboxLoading" class="empty-state">Loading inbox...</p>
+          <p v-else-if="inboxError" class="empty-state" role="alert">{{ inboxError }}</p>
           <p v-else-if="inboxMessages.length === 0" class="empty-state">No account messages yet.</p>
           <article
             v-for="message in inboxMessages"
@@ -498,11 +558,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, toRef, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useSessionStore } from "./stores/session";
 import PublicHeader from "./components/PublicHeader.vue";
 import BottomNav from "./components/BottomNav.vue";
+import BonusBanner from "./components/BonusBanner.vue";
 import {
   ChevronLeft, ChevronRight, Flame, Gift, LifeBuoy,
   LogOut, Mail, Search, ShieldCheck, Star, UserRound,
@@ -510,8 +571,11 @@ import {
 } from "lucide-vue-next";
 import fish from "./assets/g-fish.jpg";
 import slot from "./assets/g-slot.jpg";
+import aviator from "./assets/g-aviator.jpg";
+import aviatrix from "./assets/g-aviatrix.jpg";
+import chicken from "./assets/g-chicken.jpg";
+import mines from "./assets/g-mines.jpg";
 import b9Logo from "./assets/b9-logo.jpg";
-import welcomeBanner from "./assets/banner.jpg";
 import jackpotBanner from "./assets/jackpot-banner.jpg";
 import popularCategory from "./assets/01_popular.png";
 import pgSlotCategory from "./assets/02_pg_slot.png";
@@ -519,7 +583,6 @@ import spribeCategory from "./assets/03_spribe.png";
 import fishingCategory from "./assets/04_fishing.png";
 import inOutCategory from "./assets/05_inout.png";
 
-type GameCategory = "Popular" | "PG Slot" | "Spribe" | "Fishing" | "InOut";
 type Modal = "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | "transactions" | "favorites" | "support" | null;
 type AuthUser = { id: string; username: string; phone: string; email: string; country: string; kycStatus: string; role: "user" | "admin"; balance: number; status: string; createdAt: string; lastLoginAt: string | null; googlePictureUrl?: string };
 type WalletTransaction = { id: string; type: "deposit" | "withdrawal"; amount: number; status: string; createdAt: string; paymentMethod?: string; paymentReference?: string; paymentNote?: string };
@@ -535,7 +598,8 @@ type Game = {
   status: number;
 };
 
-const categories: GameCategory[] = ["Popular", "PG Slot", "Spribe", "Fishing", "InOut"];
+const gameSort = ref<"popular" | "name" | "provider">("popular");
+const selectedProvider = ref("");
 const pageLinks = [
   { path: "/", label: "Home" },
   { path: "/games", label: "Games" },
@@ -543,17 +607,33 @@ const pageLinks = [
   { path: "/wallet", label: "Wallet" },
   { path: "/account", label: "Account" },
 ];
-const categoryItems = [
+const baseCategoryItems = [
   { label: "Popular" as const, image: popularCategory },
   { label: "PG Slot" as const, image: pgSlotCategory },
   { label: "Spribe" as const, image: spribeCategory },
   { label: "Fishing" as const, image: fishingCategory },
   { label: "InOut" as const, image: inOutCategory },
 ];
-const selectedCategory = ref<GameCategory>("Popular");
+const gameCategories = computed(() => {
+  const entries = baseCategoryItems.map((category) => ({ ...category }));
+  const providerCategories = [...new Set(games.value.map((game) => game.provider).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b))
+    .map((provider) => ({ label: provider, image: popularCategory }));
+  return [
+    ...entries,
+    ...providerCategories.filter((provider) => !entries.some((category) => category.label === provider.label)),
+  ];
+});
+const selectedCategory = ref<string>("Popular");
+const categories = computed(() => gameCategories.value.map((category) => category.label));
 const games = ref<Game[]>([]);
 const gamesLoading = ref(true);
 const gamesError = ref("");
+const gamesBatchSize = 12;
+const displayedGameCount = ref(gamesBatchSize);
+const gamesLoadSentinel = ref<HTMLElement | null>(null);
+let gamesLoadObserver: IntersectionObserver | undefined;
+let gamesLoadPromise: Promise<void> | undefined;
 const launchingGameId = ref<string | null>(null);
 const balance = ref(8891.2);
 const jackpot = ref(10799004.2);
@@ -563,7 +643,8 @@ const searchOpen = ref(false);
 const modal = ref<Modal>(null);
 const signedIn = ref(false);
 const amount = ref("1000");
-const categoryList = ref<HTMLElement | null>(null);
+const homeCategoryList = ref<HTMLElement | null>(null);
+const gameCategoryList = ref<HTMLElement | null>(null);
 const notice = ref("");
 const session = useSessionStore();
 const token = toRef(session, "userToken");
@@ -613,6 +694,7 @@ const returningGameFunds = ref(false);
 const inboxMessages = ref<InboxMessage[]>([]);
 const unreadCount = ref(0);
 const inboxLoading = ref(false);
+const inboxError = ref("");
 const platformAnnouncement = ref("Welcome to B9 Game. Play responsibly and review applicable terms.");
 const supportSubject = ref("");
 const supportMessage = ref("");
@@ -631,6 +713,12 @@ let googleInitialized = false;
 
 const currentPage = computed(() => route.path.slice(1) || "home");
 const activePromotions = computed(() => promotions.value.filter((promotion) => promotion.active));
+const bannerSlides = [
+  { id: "bonus", label: "first deposit bonus" },
+  { id: "games", label: "games" },
+  { id: "promotions", label: "promotions" },
+  { id: "wallet", label: "wallet" },
+];
 const homePromotion = computed(() => activePromotions.value[homePromotionIndex.value] || activePromotions.value[0]);
 const kycLabel = computed(() => {
   if (user.value?.kycStatus === "verified") return "Verified";
@@ -638,20 +726,48 @@ const kycLabel = computed(() => {
   if (user.value?.kycStatus === "rejected") return "Rejected — resubmit";
   return "Not submitted";
 });
-const visibleGames = computed(() => {
+const filteredGames = computed(() => {
   const search = query.value.trim().toLowerCase();
-  const filtered = search
-    ? games.value.filter((game) => game.name.toLowerCase().includes(search))
-    : games.value.filter((game) => {
-      const provider = game.provider.toLowerCase();
-      if (selectedCategory.value === "Popular") return true;
-      const gameType = game.gameType.toLowerCase();
-      if (selectedCategory.value === "PG Slot") return ["pg", "jili", "pragmatic"].some((name) => provider.includes(name)) || gameType.includes("slot");
-      if (selectedCategory.value === "Spribe") return provider.includes("spribe");
-      if (selectedCategory.value === "Fishing") return provider.includes("fish") || gameType.includes("fish");
-      return provider.includes("inout") || gameType.includes("inout");
-    });
-  return currentPage.value === "home" ? filtered.slice(0, 6) : filtered;
+  let filtered = games.value.filter((game) => {
+    const provider = game.provider.toLowerCase();
+    const gameType = game.gameType.toLowerCase();
+    const categoryMatches = selectedCategory.value === "Popular"
+      || (selectedCategory.value === "PG Slot" && (["pg", "jili", "pragmatic"].some((name) => provider.includes(name)) || gameType.includes("slot")))
+      || (selectedCategory.value === "Spribe" && provider.includes("spribe"))
+      || (selectedCategory.value === "Fishing" && (provider.includes("fish") || gameType.includes("fish")))
+      || (selectedCategory.value === "InOut" && (provider.includes("inout") || gameType.includes("inout")))
+      || game.provider === selectedCategory.value;
+    const searchMatches = !search || `${game.name} ${game.provider} ${game.gameType}`.toLowerCase().includes(search);
+    const providerMatches = !selectedProvider.value || game.provider === selectedProvider.value;
+    return categoryMatches && searchMatches && providerMatches;
+  });
+  if (gameSort.value === "name") filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+  if (gameSort.value === "provider") filtered = [...filtered].sort((a, b) => a.provider.localeCompare(b.provider) || a.name.localeCompare(b.name));
+  return filtered;
+});
+const hasMoreGames = computed(() => displayedGameCount.value < filteredGames.value.length);
+const visibleGames = computed(() => currentPage.value === "home"
+  ? filteredGames.value.slice(0, 3)
+  : filteredGames.value.slice(0, displayedGameCount.value));
+const gameProviders = computed(() => [...new Set(games.value.map((game) => game.provider).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
+const filteredGameCount = computed(() => visibleGames.value.length);
+
+watch([currentPage, gamesLoadSentinel], async ([page]) => {
+  gamesLoadObserver?.disconnect();
+  gamesLoadObserver = undefined;
+  if (page !== "games" || !gamesLoadSentinel.value || !hasMoreGames.value || gamesLoading.value || gamesError.value) return;
+  await nextTick();
+  if (!gamesLoadSentinel.value) return;
+  gamesLoadObserver = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) {
+      displayNextGamesBatch();
+    }
+  }, { rootMargin: "500px 0px" });
+  gamesLoadObserver.observe(gamesLoadSentinel.value);
+}, { flush: "post" });
+
+watch([selectedCategory, selectedProvider, query, gameSort], () => {
+  displayedGameCount.value = gamesBatchSize;
 });
 const modalTitle = computed(() => {
   if (modal.value === "promo") return "Promotions";
@@ -724,6 +840,7 @@ onMounted(async () => {
   }
 });
 onUnmounted(() => {
+  gamesLoadObserver?.disconnect();
   if (noticeTimer) clearTimeout(noticeTimer);
   if (inboxTimer) clearInterval(inboxTimer);
   if (promotionCarouselTimer) clearInterval(promotionCarouselTimer);
@@ -828,28 +945,32 @@ async function refreshInbox(): Promise<void> {
     const data = await api("/api/inbox");
     inboxMessages.value = data.notifications || [];
     unreadCount.value = Number(data.unreadCount || 0);
-  } catch {
-    unreadCount.value = 0;
+    inboxError.value = "";
+  } catch (error) {
+    inboxError.value = error instanceof Error ? error.message : "Could not refresh inbox";
   }
 }
 
 function startInboxPolling(): void {
   if (inboxTimer) clearInterval(inboxTimer);
   void refreshInbox();
-  inboxTimer = setInterval(() => { void refreshInbox(); }, 5000);
+  inboxTimer = setInterval(() => {
+    if (document.visibilityState === "visible") void refreshInbox();
+  }, 5000);
 }
 
 async function openInbox(): Promise<void> {
   if (requireSignIn()) return;
   modal.value = "inbox";
   inboxLoading.value = true;
+  inboxError.value = "";
   await refreshInbox();
   try {
     await api("/api/inbox/read", { method: "PATCH", body: "{}" });
     unreadCount.value = 0;
     inboxMessages.value = inboxMessages.value.map((message) => ({ ...message, read: true }));
-  } catch {
-    // The inbox remains available even if the read-state update fails.
+  } catch (error) {
+    inboxError.value = error instanceof Error ? error.message : "Could not mark inbox messages as read";
   } finally {
     inboxLoading.value = false;
   }
@@ -860,6 +981,14 @@ function formatMoney(value: number): string {
 }
 function displayCurrency(currency: string): string {
   return currency === "INR" || currency === "NPR" ? "Rs." : currency;
+}
+function gameArtwork(game: Game): string {
+  const search = `${game.name} ${game.provider} ${game.gameType}`.toLowerCase();
+  if (/aviatrix|aviator|crash|spribe/.test(search)) return search.includes("aviatrix") ? aviatrix : aviator;
+  if (/chicken|road/.test(search)) return chicken;
+  if (/mine|gem/.test(search)) return mines;
+  if (/fish|fishing/.test(search)) return fish;
+  return slot;
 }
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -901,26 +1030,46 @@ function requireSignIn(): boolean {
   return true;
 }
 async function loadGames(): Promise<void> {
+  if (gamesLoadPromise) return gamesLoadPromise;
   gamesLoading.value = true;
   gamesError.value = "";
-  try {
-    const data = await api("/api/games");
-    games.value = data.games;
-  } catch (error) {
-    games.value = [];
-    const message = error instanceof Error ? error.message : "";
-    gamesError.value = message === "Game provider is not configured"
-      ? "Game catalog will appear after the provider is configured on the server."
-      : /too many requests|rate limit|cooling down/i.test(message)
-        ? "HUIDU has temporarily rate-limited game catalog requests. Please wait for the provider quota to reset; repeated refreshes will not restore access."
-      : /invalid hash code/i.test(message)
-        ? "HUIDU rejected the game-catalog request (error 1004: Invalid hash code). The provider must confirm the catalog API authentication or issue valid API access."
-      : /HUIDU/i.test(message)
-        ? "Games are temporarily unavailable. Please check the HUIDU API configuration and try again."
-        : "Games are temporarily unavailable. Please try again later.";
-  } finally {
+  gamesLoadPromise = (async () => {
+    try {
+      const data = await api("/api/games");
+      const uniqueGames = new Map<string, Game>();
+      for (const game of data.games as Game[]) {
+        if (!uniqueGames.has(game.id)) uniqueGames.set(game.id, game);
+      }
+      games.value = [...uniqueGames.values()];
+      displayedGameCount.value = gamesBatchSize;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      gamesError.value = message === "Game provider is not configured"
+        ? "Game catalog will appear after the provider is configured on the server."
+        : /too many requests|rate limit|cooling down/i.test(message)
+          ? "HUIDU has temporarily rate-limited game catalog requests. Please wait for the provider quota to reset; repeated refreshes will not restore access."
+        : /invalid hash code/i.test(message)
+          ? "HUIDU rejected the game-catalog request (error 1004: Invalid hash code). The provider must confirm the catalog API authentication or issue valid API access."
+        : /HUIDU/i.test(message)
+          ? "Games are temporarily unavailable. Please check the HUIDU API configuration and try again."
+          : "Games are temporarily unavailable. Please try again later.";
+    } finally {
+      gamesLoading.value = false;
+      gamesLoadPromise = undefined;
+    }
+  })();
+  return gamesLoadPromise;
+}
+function displayNextGamesBatch(): void {
+  if (gamesLoading.value || gamesError.value || !hasMoreGames.value) return;
+  gamesLoading.value = true;
+  window.setTimeout(() => {
+    displayedGameCount.value = Math.min(
+      displayedGameCount.value + gamesBatchSize,
+      filteredGames.value.length,
+    );
     gamesLoading.value = false;
-  }
+  }, 180);
 }
 async function loadPromotions(): Promise<void> {
   if (!signedIn.value) return;
@@ -941,6 +1090,9 @@ function navigateTo(path: string): void {
   if (path !== "/games") searchOpen.value = false;
   void router.push(path);
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function changeBannerSlide(index: number): void {
+  homePromotionIndex.value = index;
 }
 function toggleGameSearch(): void {
   if (route.path !== "/games") {
@@ -980,12 +1132,20 @@ async function returnGameFunds(): Promise<void> {
     returningGameFunds.value = false;
   }
 }
-function selectCategory(category: GameCategory): void {
+function selectCategory(category: string): void {
   selectedCategory.value = category;
   query.value = "";
+  selectedProvider.value = "";
+}
+function resetGameFilters(): void {
+  selectedCategory.value = "Popular";
+  selectedProvider.value = "";
+  query.value = "";
+  gameSort.value = "popular";
 }
 function scrollCategories(direction: number): void {
-  categoryList.value?.scrollBy({ left: direction * 120, behavior: "smooth" });
+  const list = currentPage.value === "games" ? gameCategoryList.value : homeCategoryList.value;
+  list?.scrollBy({ left: direction * Math.max(180, list.clientWidth * 0.7), behavior: "smooth" });
 }
 function toggleFavorite(id: string): void {
   favorites.value = favorites.value.includes(id)
@@ -1274,33 +1434,44 @@ function showAuth(): void {
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #355342;
-  background: #e8f4e9;
+  background: #edf3ee;
   font-synthesis: none;
   font-optical-sizing: auto;
+  font-smooth: always;
+  -webkit-tap-highlight-color: transparent;
 }
 * { box-sizing: border-box; }
-html { min-width: 320px; background: #e8f4e9; }
-body { margin: 0; min-height: 100vh; }
-button, input { font: inherit; }
-button { cursor: pointer; }
+html { min-width: 320px; min-height: 100%; background: #edf3ee; scroll-behavior: smooth; }
+body { margin: 0; min-height: 100vh; min-height: 100dvh; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid rgb(30 159 82 / 55%);
+  outline-offset: 3px;
+}
 .page-frame {
-  width: min(100%, 480px);
+  width: min(100%, 1440px);
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
-  padding-bottom: calc(91px + env(safe-area-inset-bottom));
-  overflow: hidden;
-  background: #f6faf6;
-  box-shadow: 0 0 36px rgb(34 91 51 / 8%);
+  padding-bottom: calc(86px + env(safe-area-inset-bottom));
+  overflow: clip;
+  background: #f5f8f5;
+  box-shadow: 0 0 42px rgb(34 70 45 / 7%);
 }
 .desktop-nav { display: none; }
 .topbar {
+  position: sticky;
+  z-index: 6;
+  top: 0;
   display: flex;
-  height: 62px;
+  min-height: 64px;
   align-items: center;
-  gap: 7px;
-  padding: 4px 12px 10px;
-  color: white;
-  background: #20b763;
+  gap: 10px;
+  padding: 8px 14px;
+  color: #fff;
+  background: #159447;
+  box-shadow: 0 4px 16px rgb(19 99 49 / 14%);
 }
 .header-icon { display: grid; flex: 0 0 auto; place-items: center; padding: 0; border: 0; color: inherit; background: none; }
 .menu-button { width: 25px; }
@@ -1319,10 +1490,10 @@ button { cursor: pointer; }
   width: 40px;
   height: 40px;
   flex: 0 0 40px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  object-fit: contain;
+  object-fit: cover;
+  border: 2px solid #159447;
+  border-radius: 10px;
+  background: #159447;
 }
 .brand-wordmark {
   display: block;
@@ -1363,7 +1534,7 @@ button { cursor: pointer; }
 .search-input-icon, .clear-search { flex: 0 0 auto; color: #fff; }
 .search-wrap input { width: 100%; padding: 9px 12px; border: 0; border-radius: 10px; outline: none; color: #273f31; background: #fff; }
 .clear-search { display: grid; place-items: center; padding: 2px; border: 0; background: none; }
-.content { display: flex; flex-direction: column; gap: 10px; padding: 9px 11px 16px; }
+.content { display: flex; width: min(100%, 1320px); flex-direction: column; gap: 13px; margin: 0 auto; padding: 13px 13px 20px; }
 .promo-frame { padding: 8px; border-radius: 28px; background: #fff; box-shadow: 0 3px 12px rgb(32 98 51 / 5%); }
 .hero { position: relative; min-height: 0; max-height: 320px; aspect-ratio: 393 / 168; overflow: hidden; border-radius: 20px; color: #fff; background: radial-gradient(circle at 85% 15%, rgb(91 206 115 / 50%), transparent 36%), linear-gradient(120deg, #075e35, #128647 68%, #20a85b); }
 .hero::after { position: absolute; inset: 0; content: ""; background: linear-gradient(90deg, rgb(3 83 39 / 38%) 0%, transparent 58%); pointer-events: none; }
@@ -1383,27 +1554,26 @@ button { cursor: pointer; }
 .hero-dots { position: absolute; z-index: 2; right: 16px; bottom: 7px; left: 16px; display: flex; justify-content: center; gap: 7px; }
 .hero-dots button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: rgb(255 255 255 / 55%); cursor: pointer; }
 .hero-dots button.selected { width: 20px; border-radius: 9px; background: #fff; }
-.welcome-banner { position: relative; display: flex; min-height: 220px; align-items: center; justify-content: space-between; gap: 16px; overflow: hidden; padding: clamp(18px, 5vw, 28px); border-radius: 20px; color: white; background: #075e35; }
-.welcome-banner::before { position: absolute; z-index: 1; inset: 0; content: ""; background: linear-gradient(90deg, rgb(0 47 24 / 94%) 0%, rgb(0 47 24 / 79%) 45%, rgb(0 47 24 / 10%) 100%); pointer-events: none; }
-.welcome-banner-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 42%; }
-.welcome-banner-copy { position: relative; z-index: 2; max-width: 68%; }
+.welcome-banner { position: relative; display: block; min-height: 0; aspect-ratio: 1240 / 520; overflow: hidden; padding: 0; border: 2px solid #159447; border-radius: 25px; color: white; background: #075e35; }
+.welcome-banner::before { display: none; }
+.welcome-banner-image { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+.welcome-banner-copy { display: none; }
 .welcome-banner .eyebrow { color: #9af0b4; }
 .welcome-banner h1 { margin: 6px 0; color: white; font-size: clamp(21px, 6vw, 32px); }
 .welcome-banner p { max-width: 560px; margin: 0; color: rgb(255 255 255 / 88%); font-size: 13px; line-height: 1.5; }
-.welcome-banner .primary-button { position: relative; z-index: 2; flex: 0 0 auto; }
-.welcome-banner .primary-button { flex: 0 0 auto; }
+.welcome-banner .primary-button { position: absolute; z-index: 2; right: 12%; bottom: 13%; min-height: 42px; flex: 0 0 auto; border: 0; border-radius: 999px; background: #32bc68; box-shadow: none; }
 .announcement { display: flex; min-height: 43px; align-items: center; gap: 10px; padding: 5px 7px 5px 14px; border-radius: 14px; color: #426d51; background: #e7f4e9; }
 .announcement-volume { flex: 0 0 auto; color: #36a564; fill: #36a564; }
 .announcement p { flex: 1; overflow: hidden; margin: 0; font-size: clamp(11px, 3.4vw, 14px); white-space: nowrap; text-overflow: ellipsis; }
 .inbox-button { position: relative; display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 10px; color: white; background: #17a854; }
 .inbox-badge { position: absolute; top: -6px; right: -7px; min-width: 18px; height: 18px; padding: 0 4px; border: 2px solid white; border-radius: 999px; color: white; background: #df3f4b; font-size: 9px; font-weight: 800; line-height: 14px; }
-.categories { display: flex; min-height: 91px; align-items: center; padding: 6px 5px 4px; border-radius: 19px; background: white; box-shadow: 0 3px 13px rgb(27 88 47 / 5%); }
+.categories { display: flex; min-height: 96px; align-items: center; padding: 8px 7px 6px; border: 1px solid #edf1ed; border-radius: 19px; background: white; box-shadow: 0 5px 18px rgb(27 88 47 / 5%); }
 .category-arrow { display: grid; width: 24px; flex: 0 0 24px; place-items: center; padding: 0; border: 0; color: #8d9991; background: none; }
 .category-list { display: flex; flex: 1; justify-content: space-around; gap: 2px; overflow-x: auto; scrollbar-width: none; }
 .category-list::-webkit-scrollbar { display: none; }
 .category { display: flex; min-width: 51px; flex: 1; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; padding: 0; border: 0; color: #707b73; background: none; font-size: 12px; }
 .category-icon { display: grid; height: 39px; place-items: center; color: #16994d; }
-.category-image { width: 38px; height: 38px; object-fit: contain; }
+.category-image { display: block; width: 38px; height: 38px; object-fit: contain; }
 .category:first-child .category-icon svg { fill: currentColor; stroke: #16994d; }
 .category-label { padding: 0 3px 5px; border-bottom: 2px solid transparent; white-space: nowrap; }
 .category.selected .category-label { border-color: #27a95c; color: #315940; font-weight: 700; }
@@ -1418,9 +1588,10 @@ button { cursor: pointer; }
   position: relative;
   aspect-ratio: 3.16 / 1;
   overflow: hidden;
-  border-radius: 16px;
-  background: #eef8ee;
-  box-shadow: 0 4px 12px rgb(38 124 69 / 7%);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .jackpot-banner {
   position: absolute;
@@ -1445,17 +1616,41 @@ button { cursor: pointer; }
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.games-panel { padding: 9px 7px 10px; border-radius: 18px 18px 0 0; background: white; }
+.games-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 10px 4px 2px; }
+.games-heading h1 { margin: 4px 0; color: #284b35; font-size: clamp(24px, 5vw, 36px); }
+.games-heading p { margin: 0; color: #718076; font-size: 14px; }
+.games-total { flex: 0 0 auto; padding: 8px 12px; border-radius: 999px; color: #277647; background: #e7f4e9; font-size: 13px; font-weight: 750; }
+.games-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border: 1px solid #e8eee8; border-radius: 14px; background: #fff; }
+.games-search { display: flex; min-width: 220px; min-height: 42px; flex: 1 1 280px; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid #dfe8e0; border-radius: 10px; color: #748278; background: #f9fbf9; }
+.games-search input { width: 100%; min-width: 0; border: 0; outline: 0; color: #355342; background: transparent; }
+.games-search button { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 50%; color: #64736a; background: transparent; }
+.provider-filter, .sort-filter { display: flex; min-height: 42px; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid #dfe8e0; border-radius: 10px; color: #718076; background: #fff; font-size: 12px; }
+.provider-filter select, .sort-filter select { max-width: 190px; min-height: 38px; border: 0; outline: 0; color: #355342; background: transparent; font: inherit; font-weight: 650; }
+.games-summary { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; color: #718076; font-size: 12px; }
+.games-summary button, .catalog-error button, .catalog-empty button { padding: 8px 12px; border: 0; border-radius: 9px; color: #197744; background: #e7f4e9; font-size: 12px; font-weight: 700; }
+.catalog-error, .catalog-empty { padding: 20px; border: 1px solid #f0dfc0; border-radius: 14px; color: #795b27; background: #fffaf0; text-align: center; }
+.catalog-error p, .catalog-empty p { margin: 0 0 12px; }
+.catalog-empty h2 { margin: 0 0 8px; color: #355342; font-size: 18px; }
+.games-panel { padding: 14px 12px 16px; border: 1px solid #edf1ed; border-radius: 20px; background: white; box-shadow: 0 5px 18px rgb(31 72 43 / 4%); }
+.games-panel-full { padding: 18px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 10px; }
 .section-heading h2 { display: flex; align-items: center; gap: 7px; margin: 0; color: #385e46; font-size: 16px; font-weight: 750; }
 .section-flame { color: #169b4d; }
 .view-all { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border: 0; border-radius: 99px; color: #50765b; background: #edf6ed; font-size: 12px; }
-.game-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
-.game-card { position: relative; aspect-ratio: .86; overflow: hidden; border-radius: 15px; background: #138841; cursor: pointer; isolation: isolate; }
+.game-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.page-games .game-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+.games-loading-more, .games-end-message { display: flex; min-height: 48px; align-items: center; justify-content: center; gap: 9px; color: #63806b; font-size: 13px; }
+.games-load-sentinel { width: 100%; height: 1px; }
+.loading-spinner { width: 17px; height: 17px; border: 2px solid #d5e8d8; border-top-color: #159447; border-radius: 50%; animation: game-spinner .7s linear infinite; }
+.games-load-error { margin-top: 12px; }
+@keyframes game-spinner { to { transform: rotate(360deg); } }
+.page-home .game-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.game-card { position: relative; aspect-ratio: .9; overflow: hidden; border: 1px solid rgb(20 70 35 / 8%); border-radius: 17px; background: #138841; cursor: pointer; isolation: isolate; box-shadow: 0 5px 13px rgb(28 69 39 / 10%); transition: transform .18s ease, box-shadow .18s ease; }
+.game-card:active { transform: scale(.985); }
 .game-card > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform .22s ease; }
 .game-card:hover > img { transform: scale(1.04); }
 .game-shade { position: absolute; z-index: 1; inset: 0; background: linear-gradient(180deg, rgb(0 25 10 / 16%) 0%, transparent 34%, rgb(0 24 12 / 44%) 100%); }
-.game-card.fortune-card > img { filter: hue-rotate(290deg) saturate(1.3); }
+.game-card.fortune-card > img { filter: none; }
 .game-brand { position: absolute; z-index: 2; top: 9px; left: 8px; color: white; font-size: clamp(8px, 2.4vw, 11px); font-weight: 900; text-decoration: underline; text-shadow: 0 1px 3px rgb(0 0 0 / 40%); }
 .game-art-title { position: absolute; z-index: 2; right: 3px; bottom: 27px; left: 3px; color: white; font-size: clamp(12px, 4vw, 20px); font-style: italic; font-weight: 1000; line-height: .95; text-align: center; text-shadow: 1px 2px 2px #1d2220, -1px -1px 1px rgb(255 255 255 / 55%); }
 .game-name { position: absolute; z-index: 2; right: 4px; bottom: 7px; left: 4px; color: white; font-size: 12px; font-weight: 700; text-align: center; text-shadow: 0 1px 3px rgb(0 0 0 / 55%); }
@@ -1463,6 +1658,11 @@ button { cursor: pointer; }
 .game-unavailable { cursor: not-allowed; }
 .game-unavailable > img { filter: grayscale(.8) brightness(.65); }
 .favorite-button { position: absolute; z-index: 3; top: 7px; right: 7px; display: grid; width: 27px; height: 27px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: #267c48; background: white; box-shadow: 0 2px 6px rgb(0 0 0 / 12%); }
+.favorite-button svg { fill: none; }
+.favorite-button[aria-label="Remove favorite"] svg { fill: currentColor; }
+.favorite-button svg, .bottom-nav button > svg, .header-icon svg, .inbox-button svg { display: block; flex-shrink: 0; }
+.game-card:focus-visible { outline: 3px solid #26a85c; outline-offset: 3px; }
+.bottom-nav button { line-height: 1.2; }
 .empty-state { padding: 20px 0; color: #6d786f; text-align: center; font-size: 13px; }
 .bottom-nav {
   position: fixed;
@@ -1470,14 +1670,17 @@ button { cursor: pointer; }
   bottom: 0;
   left: 50%;
   display: flex;
-  width: min(100%, 480px);
+  width: 100%;
   min-height: 76px;
   align-items: flex-end;
   justify-content: space-around;
-  padding: 8px 8px calc(7px + env(safe-area-inset-bottom));
-  border-radius: 23px 23px 0 0;
+  padding: 9px 12px calc(8px + env(safe-area-inset-bottom));
+  border: 1px solid #edf1ed;
+  border-radius: 22px 22px 0 0;
   background: rgb(255 255 255 / 97%);
-  box-shadow: 0 -3px 16px rgb(32 79 46 / 10%);
+  box-shadow: 0 -5px 22px rgb(32 79 46 / 10%);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   transform: translateX(-50%);
 }
 .bottom-nav button { display: flex; min-width: 48px; flex-direction: column; align-items: center; gap: 3px; padding: 0; border: 0; color: #9da69f; background: none; font-size: 10px; }
@@ -1651,8 +1854,16 @@ button { cursor: pointer; }
 .kyc-form label input { padding: 7px; border-style: dashed; }
 @media (max-width: 479px) {
   .amount-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .game-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .game-card { border-radius: 13px; }
+  .games-heading { align-items: flex-start; }
+  .games-heading p { max-width: 230px; font-size: 12px; }
+  .games-total { padding: 6px 9px; font-size: 11px; }
+  .games-toolbar { gap: 7px; padding: 9px; }
+  .games-search { min-width: 100%; flex-basis: 100%; }
+  .provider-filter, .sort-filter { flex: 1 1 45%; justify-content: space-between; }
+  .provider-filter select, .sort-filter select { max-width: 58%; }
+  .page-home .game-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .page-games .game-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+  .game-card { border-radius: 15px; }
   .game-art-title { font-size: clamp(16px, 5vw, 22px); }
   .game-name { font-size: 12px; }
   .verification-row { grid-template-columns: 1fr 1fr; }
@@ -1664,36 +1875,43 @@ button { cursor: pointer; }
   .avatar-upload-button { max-width: 100%; }
   .inbox-message-heading { flex-wrap: wrap; }
   .promo-card { align-items: flex-start; }
-  .welcome-banner { min-height: 245px; align-items: flex-start; flex-direction: column; justify-content: center; }
-  .welcome-banner::before { background: linear-gradient(90deg, rgb(0 47 24 / 91%) 0%, rgb(0 47 24 / 76%) 52%, rgb(0 47 24 / 18%) 100%); }
-  .welcome-banner-image { object-position: 60% center; }
-  .welcome-banner-copy { max-width: 78%; }
+  .welcome-banner { min-height: 0; aspect-ratio: 1240 / 520; border-radius: 16px; }
+  .welcome-banner::before { display: none; }
+  .welcome-banner-image { object-position: center; }
+  .welcome-banner-copy { display: none; }
   .bottom-nav { padding-right: max(8px, env(safe-area-inset-right)); padding-left: max(8px, env(safe-area-inset-left)); }
   .bottom-nav button { min-width: 48px; min-height: 48px; }
+}
+@media (min-width: 480px) and (max-width: 759px) {
+  .page-frame { width: 100%; }
+  .content { padding-right: 20px; padding-left: 20px; }
+  .page-home .game-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .page-games .game-grid { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 12px; }
 }
 @media (min-width: 480px) {
   .page-frame { min-height: 100vh; }
 }
 @media (min-width: 760px) {
-  body { background: #edf5ef; }
+  body { background: radial-gradient(ellipse at top, #f8fbf8 0%, #eaf1eb 80%); }
   .page-frame {
-    width: min(1440px, 100%);
+    width: 100%;
     margin: 0 auto;
     border-radius: 0;
+    background: #f5f8f5;
   }
-  .desktop-nav { position: sticky; top: 0; z-index: 4; display: flex; min-height: 58px; align-items: center; gap: 7px; padding: 0 clamp(20px, 4vw, 52px); border-bottom: 1px solid #e8eee8; background: rgb(255 255 255 / 97%); box-shadow: 0 3px 12px rgb(34 91 51 / 5%); }
+  .desktop-nav { position: sticky; top: 78px; z-index: 5; display: flex; min-height: 60px; align-items: center; gap: 7px; padding: 0 clamp(24px, 5vw, 72px); border-bottom: 1px solid #e8eee8; background: rgb(255 255 255 / 96%); box-shadow: 0 3px 12px rgb(34 91 51 / 5%); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
   .desktop-nav button { min-height: 40px; padding: 9px 15px; border: 0; border-radius: 9px; color: #64736a; background: transparent; font-size: 14px; font-weight: 650; }
   .desktop-nav button.active { color: #168446; background: #eaf6ed; }
   .desktop-nav .desktop-auth { margin-left: auto; color: #fff; background: #22a85a; }
   .menu-button { display: none; }
-  .topbar { height: 78px; gap: 14px; padding: 8px clamp(20px, 4vw, 52px) 12px; }
-  .brand-emblem { width: 44px; height: 44px; flex-basis: 44px; }
+  .topbar { height: 78px; gap: 14px; padding: 8px clamp(24px, 5vw, 72px) 12px; }
+  .brand-emblem { width: 46px; height: 46px; flex-basis: 46px; }
   .public-brand { width: 150px; min-width: 150px; flex-basis: 150px; gap: 9px; }
   .brand-wordmark { font-size: 23px; }
-  .header-actions { max-width: 420px; gap: 8px; }
+  .header-actions { max-width: none; flex: 0 0 auto; gap: 10px; margin-left: auto; }
   .balance-button, .deposit-button { height: 42px; }
   .search-wrap { padding-right: clamp(20px, 4vw, 52px); padding-left: clamp(20px, 4vw, 52px); }
-  .content { gap: 18px; padding: 20px clamp(20px, 4vw, 52px) 36px; }
+  .content { width: min(100%, 1320px); gap: 20px; margin: 0 auto; padding: 26px clamp(24px, 5vw, 72px) 42px; }
   .promo-frame { padding: 10px; }
   .hero { height: clamp(280px, 27vw, 380px); min-height: 280px; max-height: none; aspect-ratio: auto; }
   .hero-copy { min-height: 0; padding-right: clamp(24px, 5vw, 64px); padding-left: clamp(24px, 5vw, 64px); }
@@ -1702,19 +1920,17 @@ button { cursor: pointer; }
   .hero-subtitle { font-size: clamp(14px, 1.3vw, 18px); }
   .hero-with-art .hero-copy { max-width: 64%; }
   .hero-art { width: 48%; object-position: center; }
-  .welcome-banner { min-height: clamp(280px, 28vw, 380px); padding: clamp(28px, 5vw, 64px); }
-  .welcome-banner-copy { max-width: 58%; }
-  .welcome-banner h1 { font-size: clamp(34px, 4vw, 54px); }
-  .welcome-banner p { font-size: 16px; }
-  .categories { min-height: 112px; padding-right: 18px; padding-left: 18px; }
+  .welcome-banner { min-height: 0; }
+  .categories { min-height: 118px; padding-right: 18px; padding-left: 18px; }
   .category-list { justify-content: center; gap: clamp(12px, 2vw, 28px); }
   .category { max-width: 140px; min-width: 80px; }
   .category-image { width: 50px; height: 50px; }
   .category-label { font-size: 13px; }
   .jackpot { max-height: 400px; }
-  .game-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
-  .game-card { border-radius: 18px; }
-  .games-panel { padding: 16px 14px 14px; }
+  .page-home .game-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .page-games .game-grid { grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 16px; }
+  .game-card { border-radius: 19px; }
+  .games-panel { padding: 20px; border-radius: 22px; }
   .section-heading { margin-bottom: 14px; }
   .section-heading h2 { font-size: 19px; }
   .promotion-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
@@ -1731,12 +1947,13 @@ button { cursor: pointer; }
   .page-section { gap: 18px; padding-right: 4px; padding-left: 4px; }
 }
 @media (min-width: 1100px) {
-  .game-grid { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
+  .content { width: min(100%, 1360px); }
+  .game-grid { grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 18px; }
 }
 @media (max-width: 370px) {
   .topbar { gap: 4px; padding-right: 8px; padding-left: 8px; }
   .menu-button { width: 23px; }
-  .public-brand { width: 74px; min-width: 74px; flex-basis: 74px; }
+  .public-brand { width: 112px; min-width: 112px; flex-basis: 112px; }
   .brand-emblem { width: 34px; height: 34px; flex-basis: 34px; }
   .brand-wordmark { font-size: 14px; }
   .header-actions { gap: 4px; }
@@ -1744,10 +1961,10 @@ button { cursor: pointer; }
   .deposit-button { gap: 0; padding: 0 6px; font-size: 11px; }
   .search-button { width: 22px; }
   .search-button svg { width: 21px; }
-  .content { gap: 8px; padding-right: 7px; padding-left: 7px; }
+  .content { gap: 10px; padding-right: 9px; padding-left: 9px; }
   .categories { min-height: 82px; }
   .category { min-width: 46px; font-size: 11px; }
-  .jackpot { border-radius: 14px; }
+  .jackpot { border-radius: 0; box-shadow: none; }
   .jackpot-value { bottom: 24%; font-size: 12px; }
   .game-grid { gap: 8px; }
   .wallet-summary-grid { grid-template-columns: 1fr; }
@@ -1758,5 +1975,13 @@ button { cursor: pointer; }
   .public-brand { width: 40px; min-width: 40px; flex-basis: 40px; }
   .brand-wordmark { display: none; }
   .deposit-button { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 </style>
