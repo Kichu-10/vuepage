@@ -1,5 +1,5 @@
 <template>
-  <div class="page-frame" :class="`page-${currentPage}`">
+  <div class="page-frame" :class="[`page-${currentPage}`, { 'game-active': currentPage === 'games' && Boolean(activeGame) }]">
     <PublicHeader
       :logo="b9Logo"
       :balance-label="signedIn ? `${currencyLabel} ${formatMoney(balance)}` : '--'"
@@ -105,14 +105,18 @@
             <ChevronLeft :size="18" />
             {{ returningGameFunds ? "Returning game funds…" : "Back to Games" }}
           </button>
-          <div>
+          <div class="game-player-title">
             <span class="eyebrow">{{ activeGame.provider }}</span>
             <h1>{{ activeGame.name }}</h1>
           </div>
+          <button type="button" class="game-fullscreen-button" @click="toggleGameFullscreen">
+            {{ gameFullscreen ? "Exit fullscreen" : "Fullscreen" }}
+          </button>
         </div>
         <div class="game-player-frame">
           <iframe
             v-if="activeGameUrl"
+            ref="gameFrame"
             :src="activeGameUrl"
             :title="`${activeGame.name} game`"
             allow="autoplay; fullscreen; gamepad"
@@ -140,71 +144,74 @@
         <section v-if="maintenanceMode" class="maintenance-banner" role="status">
           Scheduled maintenance is active. Transactions and support may experience delays.
         </section>
-        <section class="games-heading">
-          <div>
-            <span class="eyebrow">GAME LOBBY</span>
-            <h1>All Games</h1>
-            <p>Browse admin-selected games by category or provider.</p>
-          </div>
-          <span class="games-total">{{ gamesLoading && games.length === 0 ? "Loading…" : `${gameCatalogTotal.toLocaleString()} games` }}</span>
-        </section>
-        <nav class="categories" aria-label="Game categories">
-          <button class="category-arrow" aria-label="Scroll categories left" @click="scrollCategories(-1)"><ChevronLeft :size="22" /></button>
-          <div ref="gameCategoryList" class="category-list">
-            <button v-for="category in gameCategories" :key="category.label" class="category" :class="{ selected: category.label === selectedCategory }" :aria-pressed="category.label === selectedCategory" @click="selectCategory(category.label)">
-              <span class="category-icon"><img :src="category.image" :alt="category.label" class="category-image" /></span>
-              <span class="category-label">{{ category.label }}</span>
-            </button>
-          </div>
-          <button class="category-arrow" aria-label="Scroll categories right" @click="scrollCategories(1)"><ChevronRight :size="22" /></button>
-        </nav>
-        <div class="games-toolbar">
-          <label class="games-search">
-            <Search :size="18" aria-hidden="true" />
-            <input v-model="query" type="search" placeholder="Search games or providers" aria-label="Search games or providers" />
-            <button v-if="query" type="button" aria-label="Clear game search" @click="query = ''"><X :size="17" /></button>
-          </label>
-          <label class="provider-filter">
-            <span>Provider</span>
-            <select v-model="selectedProvider" aria-label="Filter by provider">
-              <option value="">All providers</option>
-              <option v-for="provider in gameProviders" :key="provider" :value="provider">{{ provider }}</option>
-            </select>
-          </label>
-          <label class="sort-filter">
-            <span>Sort</span>
-            <select v-model="gameSort" aria-label="Sort games">
-              <option value="popular">Popular</option>
-              <option value="name">Name A–Z</option>
-              <option value="provider">Provider</option>
-            </select>
-          </label>
-        </div>
-        <div class="games-summary" aria-live="polite">
-          <span>{{ filteredGameCount }} games</span>
-          <button v-if="selectedCategory !== 'Popular' || selectedProvider || query" type="button" @click="resetGameFilters">Clear filters</button>
-        </div>
-        <p v-if="gamesLoading && games.length === 0" class="empty-state" role="status">Loading enabled games…</p>
-        <div v-else-if="gamesError" class="catalog-error" role="alert">
+        <p v-if="showGameCatalog && gamesLoading && games.length === 0" class="empty-state" role="status">Loading enabled games…</p>
+        <div v-else-if="showGameCatalog && gamesError" class="catalog-error" role="alert">
           <p>{{ gamesError }}</p>
           <button type="button" @click="loadGames">Try again</button>
         </div>
-        <div v-else-if="games.length === 0" class="catalog-empty">
+        <div v-else-if="showGameCatalog && games.length === 0" class="catalog-empty">
           <h2>No games are available yet</h2>
           <p>No games have been enabled for the public catalog yet.</p>
           <button type="button" @click="loadGames">Reload games</button>
         </div>
       </template>
 
-      <section v-if="currentPage === 'home' || (currentPage === 'games' && !activeGame)" class="games-panel" :class="{ 'games-panel-full': currentPage === 'games' }">
+      <section v-if="showGameSections" class="game-category-sections" aria-label="Games by category">
+        <article v-for="section in gameSections" :key="section.category" class="game-category-section">
+          <header class="game-category-heading">
+            <h2>{{ section.title }}</h2>
+            <button type="button" :aria-label="`View all ${section.title.toLowerCase()}`" @click="showAllCategory(section.category)">
+              View All <ChevronRight :size="17" />
+            </button>
+          </header>
+          <p v-if="section.loading" class="empty-state" role="status">Loading {{ section.title.toLowerCase() }}…</p>
+          <div v-else-if="section.error" class="catalog-error" role="alert">
+            <p>{{ section.error }}</p>
+            <button type="button" @click="loadGameSections">Try again</button>
+          </div>
+          <div v-else-if="section.games.length" class="game-category-strip" :aria-label="section.title">
+            <article
+              v-for="game in section.games"
+              :key="game.id"
+              class="game-card"
+              :class="[game.provider.toLowerCase().includes('pg') || game.gameType.toLowerCase().includes('slot') ? 'fortune-card' : 'fishing-card', { 'game-unavailable': game.status !== 0 }]"
+              role="button"
+              tabindex="0"
+              :aria-label="game.status === 0 ? `Play ${game.name}` : `${game.name} unavailable`"
+              :aria-disabled="game.status !== 0 || launchingGameId === game.id"
+              @click="play(game)"
+              @keydown.enter="play(game)"
+              @keydown.space.prevent="play(game)"
+            >
+              <img :src="gameArtwork(game)" :alt="game.name" loading="lazy" />
+              <div class="game-shade" />
+              <span class="game-brand">{{ game.provider }}</span>
+              <span class="game-art-title" aria-hidden="true">{{ game.name }}</span>
+              <span class="game-name">{{ launchingGameId === game.id ? "Opening..." : game.name }}</span>
+              <span v-if="game.status !== 0" class="game-status">{{ game.status === 1 ? "Maintenance" : "Unavailable" }}</span>
+              <button
+                class="favorite-button"
+                :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'"
+                @click.stop="toggleFavorite(game.id)"
+              ><Star :size="17" :fill="favorites.includes(game.id) ? 'currentColor' : 'none'" /></button>
+            </article>
+          </div>
+          <p v-else class="empty-state">No active games are assigned to {{ section.title.toLowerCase() }}.</p>
+        </article>
+      </section>
+
+      <section v-if="currentPage === 'home' || showGameCatalog" class="games-panel" :class="{ 'games-panel-full': currentPage === 'games' }">
         <div class="section-heading">
           <h2><Flame class="section-flame" :size="27" :fill="'currentColor'" />{{ query || selectedProvider ? "Results" : selectedCategory === "Popular" ? "All games" : selectedCategory }}</h2>
+          <button v-if="showGameCatalog" class="view-all" @click="returnToGameSections">
+            Back to categories <ChevronLeft :size="17" />
+          </button>
           <button v-if="currentPage === 'home'" class="view-all" @click="navigateTo('/games')">
             View All <ChevronRight :size="17" />
           </button>
         </div>
-        <p v-if="currentPage === 'home' && gamesLoading && games.length === 0" class="empty-state">Loading games...</p>
-        <p v-else-if="currentPage === 'home' && gamesError" class="empty-state">{{ gamesError }}</p>
+        <p v-if="gamesLoading && games.length === 0" class="empty-state">Loading games...</p>
+        <p v-else-if="gamesError" class="empty-state">{{ gamesError }}</p>
         <p v-else-if="!gamesLoading && !gamesError && visibleGames.length === 0" class="empty-state">No games found</p>
         <div class="game-grid">
           <article
@@ -647,7 +654,15 @@ type Game = {
   gameType: string;
   status: number;
   category?: string;
+  isPopular?: boolean;
   thumbnail?: string;
+};
+type GameSection = {
+  category: string;
+  title: string;
+  games: Game[];
+  loading: boolean;
+  error: string;
 };
 
 const gameSort = ref<"popular" | "name" | "provider">("popular");
@@ -666,30 +681,23 @@ const baseCategoryItems = [
   { label: "Fishing" as const, image: fishingCategory },
   { label: "InOut" as const, image: inOutCategory },
 ];
-const gameCategories = computed(() => {
-  const entries = baseCategoryItems.map((category) => ({ ...category }));
-  const providerCategories = gameCatalogProviders.value
-    .map((provider) => ({ label: provider.name, image: popularCategory }));
-  const customCategories = gameCatalogCategories.value
-    .map((label) => ({ label, image: popularCategory }));
-  return [
-    ...entries,
-    ...providerCategories.filter((provider) => !entries.some((category) => category.label === provider.label)),
-    ...customCategories.filter((category) =>
-      !entries.some((entry) => entry.label === category.label)
-      && !providerCategories.some((provider) => provider.label === category.label)),
-  ];
-});
+const gameCategories = baseCategoryItems;
 const selectedCategory = ref<string>("Popular");
-const categories = computed(() => gameCategories.value.map((category) => category.label));
+const categories = computed(() => gameCategories.map((category) => category.label));
 const games = ref<Game[]>([]);
+const gameSections = ref<GameSection[]>([
+  { category: "Popular", title: "Popular Games", games: [], loading: false, error: "" },
+  { category: "Mini Games", title: "Mini Games", games: [], loading: false, error: "" },
+  { category: "Slots", title: "Slot Games", games: [], loading: false, error: "" },
+  { category: "Fishing", title: "Fishing Games", games: [], loading: false, error: "" },
+]);
+const gameSectionsLoading = ref(false);
+const showAllGames = ref(false);
 const gamesLoading = ref(true);
 const gamesError = ref("");
 const gameCatalogTotal = ref(0);
 const gameCatalogPage = ref(0);
 const gameCatalogPageCount = ref(0);
-const gameCatalogProviders = ref<{ code: string; name: string }[]>([]);
-const gameCatalogCategories = ref<string[]>([]);
 const gamesLoadSentinel = ref<HTMLElement | null>(null);
 let gamesLoadObserver: IntersectionObserver | undefined;
 let gamesRequestId = 0;
@@ -699,8 +707,10 @@ const selectedGame = ref<Game | null>(null);
 const gameFundingAmount = ref("");
 const activeGame = ref<Game | null>(null);
 const activeGameUrl = ref("");
+const gameFrame = ref<HTMLIFrameElement | null>(null);
 const gameFrameLoading = ref(false);
 const gameFrameError = ref("");
+const gameFullscreen = ref(false);
 let gameFrameLoadTimer: ReturnType<typeof setTimeout> | undefined;
 const balance = ref(8891.2);
 const jackpot = ref(10799004.2);
@@ -711,7 +721,6 @@ const modal = ref<Modal>(null);
 const signedIn = ref(false);
 const amount = ref("1000");
 const homeCategoryList = ref<HTMLElement | null>(null);
-const gameCategoryList = ref<HTMLElement | null>(null);
 const notice = ref("");
 const session = useSessionStore();
 const token = toRef(session, "userToken");
@@ -780,6 +789,14 @@ let googleInitialized = false;
 
 const currentPage = computed(() => route.path.slice(1) || "home");
 const activePromotions = computed(() => promotions.value.filter((promotion) => promotion.active));
+const showGameSections = computed(() => currentPage.value === "games"
+  && !activeGame.value
+  && !showAllGames.value
+  && !query.value.trim()
+  && !selectedProvider.value);
+const showGameCatalog = computed(() => currentPage.value === "games"
+  && !activeGame.value
+  && !showGameSections.value);
 const bannerSlides = [
   { id: "bonus", label: "first deposit bonus" },
   { id: "games", label: "games" },
@@ -798,8 +815,6 @@ const hasMoreGames = computed(() => gameCatalogPage.value < gameCatalogPageCount
 const visibleGames = computed(() => currentPage.value === "home"
   ? filteredGames.value.slice(0, 3)
   : filteredGames.value);
-const gameProviders = computed(() => gameCatalogProviders.value.map((provider) => provider.name));
-const filteredGameCount = computed(() => gameCatalogTotal.value);
 
 watch([currentPage, gamesLoadSentinel, hasMoreGames, gamesLoading, gamesError], async ([page]) => {
   gamesLoadObserver?.disconnect();
@@ -811,11 +826,12 @@ watch([currentPage, gamesLoadSentinel, hasMoreGames, gamesLoading, gamesError], 
     if (entries.some((entry) => entry.isIntersecting)) {
       displayNextGamesBatch();
     }
-  }, { rootMargin: "500px 0px" });
+  }, { rootMargin: "200px 0px" });
   gamesLoadObserver.observe(gamesLoadSentinel.value);
 }, { flush: "post" });
 
 watch([selectedCategory, selectedProvider, query, gameSort], () => {
+  if (currentPage.value === "games" && !showAllGames.value && !query.value.trim() && !selectedProvider.value) return;
   if (gameFilterReloadTimer) clearTimeout(gameFilterReloadTimer);
   gameFilterReloadTimer = setTimeout(() => { void loadGames(); }, query.value ? 250 : 0);
 });
@@ -856,6 +872,11 @@ watch(() => [route.path, signedIn.value] as const, ([path, isSignedIn]) => {
 
 watch(() => route.path, (path) => {
   if (path !== "/games" && activeGame.value) void closeGame();
+  if (path === "/games" && !activeGame.value) {
+    if (showAllGames.value || query.value.trim() || selectedProvider.value) void loadGames();
+    else void loadGameSections();
+  }
+  else if (path === "/") void loadGames();
 });
 
 watch([signedIn, () => route.path, modal], ([isSignedIn, path, activeModal]) => {
@@ -869,12 +890,14 @@ watch([signedIn, () => route.path, modal], ([isSignedIn, path, activeModal]) => 
 });
 
 onMounted(async () => {
+  document.addEventListener("fullscreenchange", handleFullscreenChange);
   promotionCarouselTimer = setInterval(() => {
     if (currentPage.value === "home" && activePromotions.value.length > 1) {
       homePromotionIndex.value = (homePromotionIndex.value + 1) % activePromotions.value.length;
     }
   }, 5000);
-  void loadGames();
+  if (currentPage.value === "games" && !showAllGames.value) void loadGameSections();
+  else void loadGames();
   token.value = localStorage.getItem("b9_token") || "";
   try {
     paymentDetails.value = await fetch("/api/payment/details").then((response) => response.json());
@@ -895,6 +918,7 @@ onMounted(async () => {
   }
 });
 onUnmounted(() => {
+  document.removeEventListener("fullscreenchange", handleFullscreenChange);
   gamesLoadObserver?.disconnect();
   if (gameFilterReloadTimer) clearTimeout(gameFilterReloadTimer);
   gamesRequestId += 1;
@@ -1088,6 +1112,23 @@ function requireSignIn(): boolean {
   modal.value = "auth";
   return true;
 }
+async function loadGameSections(): Promise<void> {
+  if (gameSectionsLoading.value) return;
+  gameSectionsLoading.value = true;
+  gameSections.value = gameSections.value.map((section) => ({ ...section, loading: true, error: "" }));
+  await Promise.all(gameSections.value.map(async (section) => {
+    try {
+      const parameters = new URLSearchParams({ page: "1", category: section.category, sort: "popular" });
+      const data = await api(`/api/games?${parameters.toString()}`);
+      section.games = Array.isArray(data.games) ? data.games : [];
+    } catch (error) {
+      section.error = error instanceof Error ? error.message : `Could not load ${section.title.toLowerCase()}.`;
+    } finally {
+      section.loading = false;
+    }
+  }));
+  gameSectionsLoading.value = false;
+}
 async function loadGames(): Promise<void> {
   const requestId = ++gamesRequestId;
   gamesLoading.value = true;
@@ -1098,7 +1139,7 @@ async function loadGames(): Promise<void> {
   gameCatalogTotal.value = 0;
   const parameters = new URLSearchParams({
     page: "1",
-    category: selectedCategory.value,
+    category: currentPage.value === "games" && !showAllGames.value ? "" : selectedCategory.value,
     provider: selectedProvider.value,
     search: query.value.trim(),
     sort: gameSort.value,
@@ -1110,8 +1151,6 @@ async function loadGames(): Promise<void> {
     gameCatalogPage.value = Number.isInteger(data.page) ? data.page : 1;
     gameCatalogPageCount.value = Number.isInteger(data.pageCount) ? data.pageCount : (games.value.length ? 1 : 0);
     gameCatalogTotal.value = Number.isFinite(data.total) ? data.total : games.value.length;
-    gameCatalogProviders.value = Array.isArray(data.providers) ? data.providers : [];
-    gameCatalogCategories.value = Array.isArray(data.categories) ? data.categories : [];
   } catch (error) {
     if (requestId === gamesRequestId) {
       gamesError.value = error instanceof Error ? error.message : "Games are temporarily unavailable. Please try again later.";
@@ -1127,7 +1166,7 @@ async function displayNextGamesBatch(): Promise<void> {
   gamesLoading.value = true;
   const parameters = new URLSearchParams({
     page: String(nextPage),
-    category: selectedCategory.value,
+    category: currentPage.value === "games" && !showAllGames.value ? "" : selectedCategory.value,
     provider: selectedProvider.value,
     search: query.value.trim(),
     sort: gameSort.value,
@@ -1222,15 +1261,32 @@ function selectCategory(category: string): void {
   query.value = "";
   selectedProvider.value = "";
 }
-function resetGameFilters(): void {
-  selectedCategory.value = "Popular";
+function showAllCategory(category: string): void {
+  const categoryChanged = selectedCategory.value !== category;
+  selectedCategory.value = category;
   selectedProvider.value = "";
   query.value = "";
   gameSort.value = "popular";
+  showAllGames.value = true;
+  if (!categoryChanged) void loadGames();
+}
+function returnToGameSections(): void {
+  showAllGames.value = false;
+  query.value = "";
+  selectedProvider.value = "";
+  selectedCategory.value = "Popular";
+  gameSort.value = "popular";
+  void loadGameSections();
 }
 function scrollCategories(direction: number): void {
-  const list = currentPage.value === "games" ? gameCategoryList.value : homeCategoryList.value;
-  list?.scrollBy({ left: direction * Math.max(180, list.clientWidth * 0.7), behavior: "smooth" });
+  const list = homeCategoryList.value;
+  const buttons = list ? Array.from(list.querySelectorAll<HTMLButtonElement>(".category")) : [];
+  if (buttons.length === 0) return;
+  const selectedIndex = buttons.findIndex((button) => button.getAttribute("aria-pressed") === "true");
+  const currentIndex = selectedIndex < 0 ? 0 : selectedIndex;
+  const nextIndex = (currentIndex + direction + buttons.length) % buttons.length;
+  selectCategory(gameCategories[nextIndex].label);
+  buttons[nextIndex].scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
 }
 function toggleFavorite(id: string): void {
   favorites.value = favorites.value.includes(id)
@@ -1309,6 +1365,19 @@ function handleGameFrameError(): void {
   clearGameFrameLoadTimer();
   gameFrameLoading.value = false;
   gameFrameError.value = "The browser could not load this game inside the website. HUIDU may require its documented direct-launch method.";
+}
+function handleFullscreenChange(): void {
+  gameFullscreen.value = document.fullscreenElement === gameFrame.value;
+}
+async function toggleGameFullscreen(): Promise<void> {
+  const frame = gameFrame.value;
+  if (!frame) return;
+  try {
+    if (document.fullscreenElement === frame) await document.exitFullscreen();
+    else await frame.requestFullscreen();
+  } catch (error) {
+    notify(error instanceof Error ? `Fullscreen could not be opened: ${error.message}` : "Fullscreen is not available in this browser");
+  }
 }
 function openGameWithProvider(): void {
   if (!activeGameUrl.value) {
@@ -1659,7 +1728,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   letter-spacing: -.6px;
 }
 .header-actions { display: flex; min-width: 0; flex: 1; align-items: center; justify-content: flex-end; gap: 5px; }
-.balance-button, .deposit-button {
+.balance-button {
   display: flex;
   height: 38px;
   align-items: center;
@@ -1676,7 +1745,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .wallet-icon { flex: 0 0 auto; color: #20aa5b; fill: #20aa5b; }
 .balance-value { color: #b66b35; font-size: clamp(11px, 3.2vw, 14px); font-weight: 750; font-variant-numeric: tabular-nums; }
 .add-icon { display: grid; width: 21px; height: 21px; flex: 0 0 auto; place-items: center; border-radius: 50%; color: white; background: #26b76b; }
-.deposit-button { gap: 2px; padding: 0 8px; font-size: 12px; font-weight: 600; }
 .search-button { width: 25px; }
 .search-wrap {
   display: flex;
@@ -1771,13 +1839,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.games-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 10px 4px 2px; }
-.games-heading h1 { margin: 4px 0; color: #284b35; font-size: clamp(24px, 5vw, 36px); }
-.games-heading p { margin: 0; color: #718076; font-size: 14px; }
 .game-player { display: flex; flex-direction: column; gap: 12px; }
 .game-player-heading { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .game-player-heading h1 { margin: 3px 0 0; color: #284b35; font-size: clamp(20px, 5vw, 30px); }
 .game-back-button { display: inline-flex; min-height: 40px; align-items: center; gap: 5px; padding: 7px 12px; border: 1px solid #dfe8e0; border-radius: 10px; color: #355342; background: #fff; font-weight: 700; }
+.game-fullscreen-button { min-height: 40px; padding: 7px 12px; border: 0; border-radius: 10px; color: #fff; background: #168446; font-weight: 700; white-space: nowrap; }
 .game-player-frame { position: relative; width: 100%; height: min(68vh, 760px); min-height: 340px; overflow: hidden; border: 1px solid #dfe8e0; border-radius: 15px; background: #101914; box-shadow: 0 6px 24px rgb(22 54 31 / 12%); }
 .game-player-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #101914; }
 .game-frame-status, .game-frame-error { position: absolute; z-index: 1; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; color: #fff; background: rgb(16 25 20 / 94%); text-align: center; }
@@ -1789,15 +1855,23 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .game-player-help { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 15px; border: 1px solid #e8eee8; border-radius: 12px; background: #fff; }
 .game-player-help p { flex: 1 1 280px; margin: 0; color: #68796d; font-size: 13px; line-height: 1.5; }
 .game-provider-launch { min-height: 40px; padding: 8px 13px; border: 0; border-radius: 9px; color: #fff; background: #168446; font-size: 13px; font-weight: 700; }
-.games-total { flex: 0 0 auto; padding: 8px 12px; border-radius: 999px; color: #277647; background: #e7f4e9; font-size: 13px; font-weight: 750; }
-.games-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border: 1px solid #e8eee8; border-radius: 14px; background: #fff; }
-.games-search { display: flex; min-width: 220px; min-height: 42px; flex: 1 1 280px; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid #dfe8e0; border-radius: 10px; color: #748278; background: #f9fbf9; }
-.games-search input { width: 100%; min-width: 0; border: 0; outline: 0; color: #355342; background: transparent; }
-.games-search button { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 50%; color: #64736a; background: transparent; }
-.provider-filter, .sort-filter { display: flex; min-height: 42px; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid #dfe8e0; border-radius: 10px; color: #718076; background: #fff; font-size: 12px; }
-.provider-filter select, .sort-filter select { max-width: 190px; min-height: 38px; border: 0; outline: 0; color: #355342; background: transparent; font: inherit; font-weight: 650; }
-.games-summary { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; color: #718076; font-size: 12px; }
-.games-summary button, .catalog-error button, .catalog-empty button { padding: 8px 12px; border: 0; border-radius: 9px; color: #197744; background: #e7f4e9; font-size: 12px; font-weight: 700; }
+.game-category-sections { display: grid; gap: 18px; }
+.game-category-section { min-width: 0; padding: 14px 12px 16px; border: 1px solid #edf1ed; border-radius: 18px; background: #fff; box-shadow: 0 5px 18px rgb(31 72 43 / 4%); }
+.game-category-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.game-category-heading h2 { margin: 0; color: #284b35; font-size: clamp(17px, 4vw, 22px); }
+.game-category-heading button { display: inline-flex; min-height: 36px; align-items: center; gap: 3px; padding: 6px 9px; border: 0; border-radius: 9px; color: #168446; background: #eaf6ed; font-size: 12px; font-weight: 750; white-space: nowrap; }
+.game-category-strip { display: flex; gap: 11px; overflow-x: auto; padding: 2px 2px 10px; scroll-snap-type: x mandatory; scrollbar-width: thin; }
+.game-category-strip .game-card { width: clamp(145px, 42vw, 205px); flex: 0 0 auto; scroll-snap-align: start; }
+.page-frame.game-active { display: flex; width: 100%; height: 100vh; height: 100dvh; min-height: 0; flex-direction: column; padding-bottom: 0; overflow: hidden; }
+.page-frame.game-active .topbar { flex: 0 0 auto; }
+.page-frame.game-active .desktop-nav, .page-frame.game-active .bottom-nav, .page-frame.game-active .search-wrap { display: none; }
+.page-frame.game-active .content { width: 100%; max-width: none; min-height: 0; flex: 1 1 auto; gap: 0; margin: 0; padding: 8px max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); overflow: hidden; }
+.page-frame.game-active .game-player { min-height: 0; flex: 1 1 auto; gap: 8px; }
+.page-frame.game-active .game-player-heading { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.page-frame.game-active .game-player-heading h1 { overflow: hidden; font-size: clamp(15px, 4vw, 22px); text-overflow: ellipsis; white-space: nowrap; }
+.page-frame.game-active .game-player-frame { height: auto; min-height: 0; flex: 1 1 auto; border-radius: 10px; box-shadow: none; }
+.page-frame.game-active .game-player-help { display: none; }
+.catalog-error button, .catalog-empty button { padding: 8px 12px; border: 0; border-radius: 9px; color: #197744; background: #e7f4e9; font-size: 12px; font-weight: 700; }
 .catalog-error, .catalog-empty { padding: 20px; border: 1px solid #f0dfc0; border-radius: 14px; color: #795b27; background: #fffaf0; text-align: center; }
 .catalog-error p, .catalog-empty p { margin: 0 0 12px; }
 .catalog-empty h2 { margin: 0 0 8px; color: #355342; font-size: 18px; }
@@ -2024,13 +2098,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .kyc-form label input { padding: 7px; border-style: dashed; }
 @media (max-width: 479px) {
   .amount-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .games-heading { align-items: flex-start; }
-  .games-heading p { max-width: 230px; font-size: 12px; }
-  .games-total { padding: 6px 9px; font-size: 11px; }
-  .games-toolbar { gap: 7px; padding: 9px; }
-  .games-search { min-width: 100%; flex-basis: 100%; }
-  .provider-filter, .sort-filter { flex: 1 1 45%; justify-content: space-between; }
-  .provider-filter select, .sort-filter select { max-width: 58%; }
   .page-home .game-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .page-games .game-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
   .game-card { border-radius: 15px; }
@@ -2065,6 +2132,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .game-player { gap: 16px; }
   .game-player-heading { flex-direction: row; align-items: center; gap: 18px; }
   .game-player-frame { height: min(76vh, 860px); min-height: 500px; border-radius: 19px; }
+  .game-category-sections { gap: 22px; }
+  .game-category-section { padding: 18px; border-radius: 20px; }
+  .game-category-strip { gap: 14px; }
+  .game-category-strip .game-card { width: 205px; }
   body { background: radial-gradient(ellipse at top, #f8fbf8 0%, #eaf1eb 80%); }
   .page-frame {
     width: 100%;
@@ -2082,7 +2153,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .public-brand { width: 150px; min-width: 150px; flex-basis: 150px; gap: 9px; }
   .brand-wordmark { font-size: 23px; }
   .header-actions { max-width: none; flex: 0 0 auto; gap: 10px; margin-left: auto; }
-  .balance-button, .deposit-button { height: 42px; }
+  .balance-button { height: 42px; }
   .search-wrap { padding-right: clamp(20px, 4vw, 52px); padding-left: clamp(20px, 4vw, 52px); }
   .content { width: min(100%, 1320px); gap: 20px; margin: 0 auto; padding: 26px clamp(24px, 5vw, 72px) 42px; }
   .promo-frame { padding: 10px; }
@@ -2131,7 +2202,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .brand-wordmark { font-size: 14px; }
   .header-actions { gap: 4px; }
   .balance-button { gap: 4px; padding: 0 5px; }
-  .deposit-button { gap: 0; padding: 0 6px; font-size: 11px; }
   .search-button { width: 22px; }
   .search-button svg { width: 21px; }
   .content { gap: 10px; padding-right: 9px; padding-left: 9px; }
@@ -2147,7 +2217,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 350px) {
   .public-brand { width: 40px; min-width: 40px; flex-basis: 40px; }
   .brand-wordmark { display: none; }
-  .deposit-button { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

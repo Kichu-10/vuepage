@@ -13,7 +13,6 @@
         <span class="balance-value">{{ balanceLabel }}</span>
         <span class="add-icon"><Plus :size="16" :stroke-width="3" /></span>
       </button>
-      <button class="deposit-button" @click="$emit('deposit')">Deposit <ChevronDown :size="14" /></button>
       <button class="header-icon search-button" aria-label="Search games" @click="$emit('toggle-search')">
         <Search :size="24" :stroke-width="2" />
       </button>
@@ -22,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { ChevronDown, Menu, Plus, Search, Wallet } from "lucide-vue-next";
+import { Menu, Plus, Search, Wallet } from "lucide-vue-next";
 
 defineProps<{ logo: string; balanceLabel: string }>();
 defineEmits<{ "open-menu": []; home: []; deposit: []; "toggle-search": [] }>();
