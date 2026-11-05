@@ -10,7 +10,6 @@ import {
   getGamePlayer,
   markGamePlayerCreated,
   readDb,
-  reservedWithdrawalCents,
   toCents,
 } from "../database.js";
 import { logger } from "../config/logger.js";
@@ -24,8 +23,15 @@ import {
   transferFundsFromProvider,
 } from "../services/game-provider.js";
 
-function providerFailure(res, error, fallback) {
+function providerFailure(res, error, fallback, transferId = undefined) {
   if (error instanceof GameProviderError) {
+    if (error.code === 10027) {
+      return res.status(409).json({
+        error: "HUIDU reports this transfer ID already exists. Its outcome is uncertain and remains pending; contact support for reconciliation.",
+        code: error.code,
+        ...(transferId ? { transactionId: transferId } : {}),
+      });
+    }
     return res.status(error.status).json({ error: error.message, code: error.code });
   }
   logger.error("game_wallet_request_failed", { error: error instanceof Error ? error.message : String(error) });
@@ -75,6 +81,15 @@ export function createGamesRouter() {
     if (!/^[a-zA-Z0-9_-]{1,120}$/.test(gameId)) {
       return res.status(400).json({ error: "Invalid game" });
     }
+    const amountValue = req.body?.amount;
+    const amountText = typeof amountValue === "string" ? amountValue.trim() : String(amountValue ?? "");
+    const amountCents = /^\d+(?:\.\d{1,2})?$/.test(amountText)
+      ? toCents(Number(amountText))
+      : null;
+    const validAmount = Number.isSafeInteger(amountCents) && amountCents >= 10_000 && amountCents <= 10_000_000_000;
+    if (amountText && !validAmount) {
+      return res.status(400).json({ error: "Enter a valid game wallet funding amount" });
+    }
     const platform = req.body?.platform === undefined ? 1 : Number(req.body.platform);
     if (![1, 2].includes(platform)) return res.status(400).json({ error: "Invalid game platform" });
     let transfer;
@@ -94,57 +109,56 @@ export function createGamesRouter() {
       if (pendingOut) return res.status(409).json({ error: "A game balance return is pending. Retry returning funds first." });
 
       transfer = findPendingGameWalletTransfer(user.id, "in");
+      if (transfer && amountText && amountCents !== transfer.amountCents) {
+        return res.status(409).json({
+          error: `A previous funding transfer for ${transfer.amountCents / 100} is pending. Retry with that amount to safely complete it.`,
+          transactionId: transfer.id,
+          pendingAmount: transfer.amountCents / 100,
+        });
+      }
       if (!transfer) {
-        const availableCents = toCents(user.balance) - reservedWithdrawalCents(user.id);
-        if (availableCents > 0) {
-          transfer = beginGameWalletTransfer({
-            id: randomUUID(),
-            userId: user.id,
-            playerId: player.playerId,
-            currency: player.currency,
-            direction: "in",
-            amountCents: availableCents,
-          });
+        if (!validAmount) {
+          return res.status(400).json({ error: "Game wallet funding must be between 100 and 100000000" });
         }
+        transfer = beginGameWalletTransfer({
+          id: randomUUID(),
+          userId: user.id,
+          playerId: player.playerId,
+          currency: player.currency,
+          direction: "in",
+          amountCents,
+        });
       }
 
-      if (transfer) {
-        try {
-          const result = await launchTransferWalletGame({
-            gameId,
-            playerId: player.playerId,
-            currency: player.currency,
-            amountCents: transfer.amountCents,
-            transferId: transfer.id,
-            platform,
-          });
-          completeGameWalletTransfer({
-            id: transfer.id,
-            amountCents: transfer.amountCents,
-            providerBalanceCents: result.balanceCents,
-          });
-          markGamePlayerCreated(user.id);
-          const currentUser = readDb().users.find((item) => item.id === user.id);
-          return res.json({ gameUrl: result.gameUrl, balance: currentUser?.balance ?? 0 });
-        } catch (error) {
-          if (error instanceof GameProviderError && error.code !== undefined) {
-            failGameWalletTransfer(transfer.id);
-          }
-          throw error;
+      try {
+        const result = await launchTransferWalletGame({
+          gameId,
+          playerId: player.playerId,
+          currency: player.currency,
+          amountCents: transfer.amountCents,
+          transferId: transfer.id,
+          platform,
+        });
+        completeGameWalletTransfer({
+          id: transfer.id,
+          amountCents: transfer.amountCents,
+          providerBalanceCents: result.balanceCents,
+        });
+        markGamePlayerCreated(user.id);
+        const currentUser = readDb().users.find((item) => item.id === user.id);
+        return res.json({
+          gameUrl: result.gameUrl,
+          balance: currentUser?.balance ?? 0,
+          gameWalletBalance: result.balanceCents / 100,
+          fundedAmount: transfer.amountCents / 100,
+          transactionId: transfer.id,
+        });
+      } catch (error) {
+        if (error instanceof GameProviderError && error.code !== undefined && error.code !== 10027) {
+          failGameWalletTransfer(transfer.id);
         }
+        throw error;
       }
-
-      const result = await launchTransferWalletGame({
-        gameId,
-        playerId: player.playerId,
-        currency: player.currency,
-        amountCents: 0,
-        transferId: randomUUID(),
-        platform,
-      });
-      markGamePlayerCreated(user.id);
-      const currentUser = readDb().users.find((item) => item.id === user.id);
-      res.json({ gameUrl: result.gameUrl, balance: currentUser?.balance ?? 0 });
     } catch (error) {
       if (error instanceof Error && error.message === "Game currency is already fixed for this account") {
         return res.status(409).json({ error: error.message });
@@ -158,7 +172,7 @@ export function createGamesRouter() {
       if (error instanceof Error && error.message === "Another game wallet transfer is still pending") {
         return res.status(409).json({ error: error.message });
       }
-      providerFailure(res, error, "Could not launch game");
+      providerFailure(res, error, "Could not launch game", transfer?.id);
     }
   });
 
@@ -178,7 +192,18 @@ export function createGamesRouter() {
         if (pendingIn) return res.status(409).json({ error: "A transfer to the game wallet is pending. Retry launching the game first." });
         const wallet = await getProviderGameWalletBalance(player.playerId, player.currency);
         const amountCents = toCents(wallet.balance);
-        if (amountCents <= 0) return res.status(409).json({ error: "There are no funds to return from the game wallet." });
+        if (amountCents <= 0) {
+          const currentUser = readDb().users.find((item) => item.id === user.id && item.status === "active");
+          if (!currentUser) return res.status(403).json({ error: "Account unavailable" });
+          return res.json({
+            message: "There are no funds to return from the game wallet.",
+            amount: 0,
+            remainingGameBalance: 0,
+            balance: currentUser.balance,
+            currency: player.currency,
+            transactionId: null,
+          });
+        }
         transfer = beginGameWalletTransfer({
           id: randomUUID(),
           userId: user.id,
@@ -204,23 +229,25 @@ export function createGamesRouter() {
         res.json({
           message: "Game funds returned to your main wallet",
           amount: completed.transfer.amountCents / 100,
+          remainingGameBalance: completed.transfer.providerBalanceCents / 100,
           balance: completed.balance,
           currency: player.currency,
+          transactionId: completed.transfer.id,
         });
       } catch (error) {
-        if (error instanceof GameProviderError && error.code !== undefined) {
+        if (error instanceof GameProviderError && error.code !== undefined && error.code !== 10027) {
           failGameWalletTransfer(transfer.id);
           if (error.code === 1011) {
             return res.status(409).json({ error: "There are no funds to return from the game wallet." });
           }
         }
-        providerFailure(res, error, "Could not return game wallet funds");
+        providerFailure(res, error, "Could not return game wallet funds", transfer?.id);
       }
     } catch (error) {
       if (error instanceof Error && error.message === "Another game wallet transfer is still pending") {
         return res.status(409).json({ error: error.message });
       }
-      providerFailure(res, error, "Could not return game wallet funds");
+      providerFailure(res, error, "Could not return game wallet funds", transfer?.id);
     }
   });
 
