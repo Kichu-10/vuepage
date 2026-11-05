@@ -51,10 +51,12 @@ The integration uses the provider's **transfer wallet** flow. Funds move between
 | --- | --- | --- | --- |
 | `GET` | `/api/games` | Public | Retrieve the provider's game catalog and availability |
 | `GET` | `/api/games/wallet` | User JWT | Read the authenticated user's provider-wallet balance |
-| `POST` | `/api/games/:gameId/launch` | User JWT | Transfer available funds to the provider wallet and return an HTTPS game URL |
+| `POST` | `/api/games/:gameId/launch` | User JWT | Transfer a player-selected amount to the provider wallet and return an HTTPS game URL |
 | `POST` | `/api/games/wallet/return` | User JWT | Transfer all provider-wallet funds back to the app wallet |
 
-Transfers use a stable local transaction ID as the provider idempotency key. A timeout leaves the transfer pending so retrying the operation reuses the same ID; funds are not automatically refunded when the provider outcome is uncertain. Only a definitive provider rejection fails and reverses an inbound transfer. Pending withdrawals are excluded when calculating the amount transferred from the app wallet.
+Launch requests include a JSON `amount` in the user's currency (100–100000000, at most two decimal places) and optional `platform`. The server validates available Main Wallet funds and pending withdrawal reservations atomically. Only the selected amount moves into the provider Game Wallet; the remaining Main Wallet balance is untouched. Winnings accrue in the provider Game Wallet while playing and remain there when the embedded game closes. Closing a game only removes its iframe and refreshes the displayed provider balance; no funds move to Main Wallet automatically. An authenticated user can explicitly request a transfer of the full provider-confirmed Game Wallet balance with `POST /api/games/wallet/return`.
+
+Transfers use a stable local transaction ID as the provider idempotency key. A timeout or duplicate-transfer response leaves the transfer pending so retrying reuses the same ID; refunds are never retried under a new ID while an earlier outcome is uncertain. A duplicate-transfer response returns HTTP 409 with its transaction ID for support reconciliation. HUIDU's published API does not document a separate server-side game-session close endpoint.
 
 `GET /api/games/wallet` returns the provider ISO currency code and numeric balance. New player accounts use the currency mapped from the signed-in user's saved country.
 
