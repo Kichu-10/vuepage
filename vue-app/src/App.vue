@@ -1297,21 +1297,77 @@ function requireSignIn(): boolean {
   return true;
 }
 async function loadGameSections(): Promise<void> {
-  if (gameSectionsLoading.value) return;
   gameSectionsLoading.value = true;
-  gameSections.value = gameSections.value.map((section) => ({ ...section, loading: true, error: "" }));
-  await Promise.all(gameSections.value.map(async (section) => {
-    try {
-      const parameters = new URLSearchParams({ page: "1", category: section.category, sort: "popular" });
-      const data = await api(`/api/games?${parameters.toString()}`);
-      section.games = Array.isArray(data.games) ? data.games : [];
-    } catch (error) {
+  try {
+    await Promise.all(gameSections.value
+      .filter((section) => section.page === 0 || section.error)
+      .map((section) => loadGameSection(section, section.page === 0 ? 1 : section.page + 1)));
+  } finally {
+    gameSectionsLoading.value = false;
+  }
+}
+function resetGameSections(): void {
+  for (const section of gameSections.value) {
+    gameSectionRequestIds.set(section.category, (gameSectionRequestIds.get(section.category) || 0) + 1);
+    section.games = [];
+    section.page = 0;
+    section.pageCount = 0;
+    section.total = 0;
+    section.loading = false;
+    section.error = "";
+  }
+}
+function rememberGames(items: Game[]): void {
+  const byId = new Map(knownGames.value.map((game) => [game.id, game]));
+  for (const game of items) byId.set(game.id, game);
+  knownGames.value = [...byId.values()];
+}
+async function loadGameSection(section: GameSection, page: number): Promise<void> {
+  if (section.loading) return;
+  const requestId = (gameSectionRequestIds.get(section.category) || 0) + 1;
+  gameSectionRequestIds.set(section.category, requestId);
+  section.loading = true;
+  section.error = "";
+  try {
+    const parameters = new URLSearchParams({
+      page: String(page),
+      category: section.category,
+      provider: currentPage.value === "games" ? selectedProvider.value : "",
+      search: currentPage.value === "games" ? query.value.trim() : "",
+      sort: "popular",
+    });
+    const data = await api(`/api/games?${parameters.toString()}`);
+    if (gameSectionRequestIds.get(section.category) !== requestId) return;
+    const responseGames = Array.isArray(data.games) ? data.games as Game[] : [];
+    if (Array.isArray(data.providers)) gameProviders.value = data.providers;
+    rememberGames(responseGames);
+    const existingIds = new Set(page === 1 ? [] : section.games.map((game) => game.id));
+    const uniquePageGames = responseGames.filter((game) => {
+      if (existingIds.has(game.id)) return false;
+      existingIds.add(game.id);
+      return true;
+    });
+    section.games = page === 1
+      ? uniquePageGames
+      : [...section.games, ...uniquePageGames];
+    section.page = Number.isInteger(data.page) ? data.page : page;
+    section.pageCount = Number.isInteger(data.pageCount) ? data.pageCount : section.page;
+    section.total = Number.isFinite(data.total) ? data.total : section.games.length;
+  } catch (error) {
+    if (gameSectionRequestIds.get(section.category) === requestId) {
       section.error = error instanceof Error ? error.message : `Could not load ${section.title.toLowerCase()}.`;
-    } finally {
-      section.loading = false;
     }
-  }));
-  gameSectionsLoading.value = false;
+  } finally {
+    if (gameSectionRequestIds.get(section.category) === requestId) section.loading = false;
+  }
+}
+async function loadNextGameSection(category: string): Promise<void> {
+  const section = gameSections.value.find((item) => item.category === category);
+  if (!section || section.loading || section.error || section.page >= section.pageCount) return;
+  await loadGameSection(section, section.page + 1);
+}
+function retryGameSection(section: GameSection): void {
+  void loadGameSection(section, section.page === 0 ? 1 : section.page + 1);
 }
 async function loadGames(): Promise<void> {
   const requestId = ++gamesRequestId;
@@ -1332,6 +1388,8 @@ async function loadGames(): Promise<void> {
     const data = await api(`/api/games?${parameters.toString()}`);
     if (requestId !== gamesRequestId) return;
     games.value = Array.isArray(data.games) ? data.games : [];
+    if (Array.isArray(data.providers)) gameProviders.value = data.providers;
+    rememberGames(games.value);
     gameCatalogPage.value = Number.isInteger(data.page) ? data.page : 1;
     gameCatalogPageCount.value = Number.isInteger(data.pageCount) ? data.pageCount : (games.value.length ? 1 : 0);
     gameCatalogTotal.value = Number.isFinite(data.total) ? data.total : games.value.length;
