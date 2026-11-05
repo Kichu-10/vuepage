@@ -40,7 +40,7 @@ test("admin game dashboard lists managed games without provider credentials", as
   await expect(page.locator("body")).not.toContainText("test-password");
 });
 
-test("navigation works, icons render, and the home page shows the first three games", async ({ page }) => {
+test("navigation works and the homepage shows responsive category game sections", async ({ page }) => {
   const games = Array.from({ length: 5 }, (_, index) => ({
         id: `game-${index + 1}`,
         name: `Game ${index + 1}`,
@@ -49,6 +49,7 @@ test("navigation works, icons render, and the home page shows the first three ga
         gameType: "Slot",
         category: "Slots",
         isPopular: true,
+        thumbnail: "/src/assets/g-aviator.jpg",
         status: 0,
       }));
   await page.route("**/api/games?*", (route) => {
@@ -77,17 +78,29 @@ test("navigation works, icons render, and the home page shows the first three ga
 
   await page.goto("/");
   await expect(page.locator(".bonus-banner__art")).toBeVisible();
-  await expect(page.locator(".page-home .game-card")).toHaveCount(3);
-  await expect(page.locator(".game-card img").first()).toHaveAttribute("src", /g-aviator\.jpg|g-slot\.jpg/);
+  await expect(page.locator(".page-home .categories .category")).toHaveCount(5);
+  await expect(page.locator(".page-home .categories .category")).toHaveText(["Popular", "PG Slot", "Spribe", "Fishing", "InOut"]);
+  await expect(page.locator(".page-home .categories .category").nth(4).locator("img")).toHaveAttribute("src", /05_inout\.png/);
+  await expect(page.locator(".page-home .home-game-card")).toHaveCount(10);
+  await expect(page.locator(".page-home .home-game-card img").first()).toHaveAttribute("src", /g-aviator\.jpg/);
   await expect(page.locator(".brand-emblem")).toBeVisible();
   await expect(page.locator(".header-actions svg")).toHaveCount(3);
   await expect(page.locator(".header-actions svg").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Deposit", exact: true })).toHaveCount(0);
   const homepageCategories = page.locator(".page-home .categories .category");
-  await expect(homepageCategories).toHaveCount(5);
-  await expect(homepageCategories).toHaveText(["Popular", "PG Slot", "Spribe", "Fishing", "InOut"]);
-  await expect(homepageCategories.nth(4).locator("img")).toHaveAttribute("src", /05_inout\.png/);
+  await expect(homepageCategories.nth(0)).toHaveAttribute("aria-pressed", "true");
+  await homepageCategories.nth(1).click();
+  await expect(homepageCategories.nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#home-games-slots")).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Back to top" })).toBeVisible();
+  await page.getByRole("button", { name: "Back to top" }).click();
+  await expect(page.locator("body").evaluate((body) => body.scrollWidth <= window.innerWidth)).resolves.toBe(true);
   await page.setViewportSize({ width: 375, height: 812 });
+  const popularGames = page.locator("#home-games-popular .home-game-strip");
+  await page.getByRole("button", { name: "Next Popular Games" }).click();
+  await expect.poll(() => popularGames.evaluate((strip) => strip.scrollLeft)).toBeGreaterThan(0);
+  await page.locator("#home-games-popular .favorite-button").first().click();
+  await expect(page.locator("#home-games-popular .favorite-button").first()).toHaveAttribute("aria-label", "Remove favorite");
   await expect(page.locator(".bottom-nav button svg")).toHaveCount(5);
   await expect(page.locator(".bottom-nav button svg").first()).toBeVisible();
   await expect(page.locator("body").evaluate((body) => body.scrollWidth <= window.innerWidth)).resolves.toBe(true);
