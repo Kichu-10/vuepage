@@ -511,6 +511,7 @@ test("game player uses the available viewport and toggles player fullscreen", as
       gameWalletBalance: 100,
     },
   }));
+  await page.route("**/api/games/wallet", (route) => route.fulfill({ json: { balance: 100 } }));
   await page.route("https://game.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: "<title>Test game</title>" }));
 
   await page.setViewportSize({ width: 375, height: 812 });
@@ -540,4 +541,7 @@ test("game player uses the available viewport and toggles player fullscreen", as
   expect(desktopFrame?.width).toBeGreaterThan(1000);
   await expect(page.locator(".topbar")).toBeVisible();
   await expect(page.getByRole("button", { name: "Back to Games" })).toBeVisible();
+  await page.getByRole("button", { name: "Back to Games" }).click();
+  await page.getByRole("tab", { name: "Recent" }).click();
+  await expect(page.locator(".game-lobby-results .lobby-game-card")).toContainText("Sample Game");
 });
