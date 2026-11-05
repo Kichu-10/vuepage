@@ -16,12 +16,6 @@
       <button v-else class="desktop-auth" @click="toggleSignIn">Sign out</button>
     </nav>
 
-    <div v-if="searchOpen && currentPage === 'games'" class="search-wrap">
-      <Search class="search-input-icon" :size="18" />
-      <input v-model="query" autofocus placeholder="Search games..." aria-label="Search games" />
-      <button class="clear-search" aria-label="Close search" @click="searchOpen = false; query = ''"><X :size="18" /></button>
-    </div>
-
     <main class="content">
       <template v-if="currentPage === 'home'">
       <section v-if="signedIn && activePromotions.length" class="promo-frame" aria-label="Member promotions">
