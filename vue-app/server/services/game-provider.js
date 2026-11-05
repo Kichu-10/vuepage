@@ -383,7 +383,13 @@ function validateTransferResult(payload, requestedCents) {
   }
   const balanceValue = payload.after_amount ?? payload.credit_amount;
   const balanceCents = amountCents(balanceValue, "player balance");
-  if (requestedCents !== 0 && payload.transfer_amount !== undefined) {
+  if (requestedCents !== 0 && transferStatus !== 1) {
+    throw new GameProviderError("HUIDU did not confirm the wallet transfer status");
+  }
+  if (requestedCents !== 0 && payload.transfer_amount === undefined) {
+    throw new GameProviderError("HUIDU did not confirm the wallet transfer amount");
+  }
+  if (requestedCents !== 0) {
     const transferredCents = amountCents(String(payload.transfer_amount).replace(/^-/, ""), "transfer amount");
     if (transferredCents !== Math.abs(requestedCents)) {
       throw new GameProviderError("HUIDU returned a mismatched transfer amount");
