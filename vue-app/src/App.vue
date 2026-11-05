@@ -986,11 +986,7 @@ const kycLabel = computed(() => {
   if (user.value?.kycStatus === "rejected") return "Rejected — resubmit";
   return "Not submitted";
 });
-const filteredGames = computed(() => games.value);
 const hasMoreGames = computed(() => gameCatalogPage.value < gameCatalogPageCount.value);
-const visibleGames = computed(() => currentPage.value === "home"
-  ? filteredGames.value.slice(0, 3)
-  : filteredGames.value);
 
 watch([currentPage, gamesLoadSentinel, hasMoreGames, gamesLoading, gamesError], async ([page]) => {
   gamesLoadObserver?.disconnect();
@@ -1006,10 +1002,18 @@ watch([currentPage, gamesLoadSentinel, hasMoreGames, gamesLoading, gamesError], 
   gamesLoadObserver.observe(gamesLoadSentinel.value);
 }, { flush: "post" });
 
-watch([selectedCategory, selectedProvider, query, gameSort], () => {
-  if (currentPage.value === "games" && !showAllGames.value && !query.value.trim() && !selectedProvider.value) return;
+watch([selectedCategory, selectedProvider, query, gameSort, gameLobbyTab], () => {
+  if (currentPage.value === "home") return;
   if (gameFilterReloadTimer) clearTimeout(gameFilterReloadTimer);
-  gameFilterReloadTimer = setTimeout(() => { void loadGames(); }, query.value ? 250 : 0);
+  gameFilterReloadTimer = setTimeout(() => {
+    if (currentPage.value !== "games") return;
+    if (gameLobbyTab.value === "all" && !showAllGames.value && !query.value.trim()) {
+      resetGameSections();
+      void loadGameSections();
+    } else if (gameLobbyTab.value === "hot" || showAllGames.value || query.value.trim()) {
+      void loadGames();
+    }
+  }, query.value ? 250 : 0);
 });
 const modalTitle = computed(() => {
   if (modal.value === "game-funding") return "Choose game funding";
