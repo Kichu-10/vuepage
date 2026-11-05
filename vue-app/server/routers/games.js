@@ -7,6 +7,8 @@ import {
   ensureGamePlayer,
   failGameWalletTransfer,
   findPendingGameWalletTransfer,
+  getPublicGameCatalog,
+  getPublicManagedGame,
   getGamePlayer,
   markGamePlayerCreated,
   readDb,
@@ -19,7 +21,6 @@ import {
   getProviderGameWalletBalance,
   huiduPlayerPrefix,
   launchTransferWalletGame,
-  listProviderGames,
   transferFundsFromProvider,
 } from "../services/game-provider.js";
 
@@ -45,20 +46,14 @@ function ensureProviderPlayer(userId, country) {
 export function createGamesRouter() {
   const router = express.Router();
 
-  router.get("/", async (_req, res) => {
-    try {
-      res.json({ games: await listProviderGames() });
-    } catch (error) {
-      const status = error instanceof GameProviderError ? error.status : 502;
-      logger.warn("game_catalog_unavailable", {
-        status,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      res.status(status).json({
-        error: error instanceof GameProviderError ? error.message : "Could not load games",
-        ...(error instanceof GameProviderError && error.code !== undefined ? { code: error.code } : {}),
-      });
-    }
+  router.get("/", (req, res) => {
+    const pageText = req.query.page === undefined ? "1" : String(req.query.page);
+    if (!/^\d{1,6}$/.test(pageText)) return res.status(400).json({ error: "Invalid game page" });
+    const category = typeof req.query.category === "string" ? req.query.category.trim().slice(0, 80) : "";
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const provider = typeof req.query.provider === "string" ? req.query.provider.trim().slice(0, 80) : "";
+    const sort = ["popular", "name", "provider"].includes(String(req.query.sort)) ? String(req.query.sort) : "popular";
+    res.json(getPublicGameCatalog({ page: Number(pageText), search, provider, category, sort }));
   });
 
   router.get("/wallet", authenticate, async (req, res) => {
@@ -99,10 +94,9 @@ export function createGamesRouter() {
       );
       if (!user) return res.status(403).json({ error: "Account unavailable" });
 
-      const games = await listProviderGames();
-      const game = games.find((item) => item.id === gameId);
+      const game = getPublicManagedGame(gameId);
       if (!game) return res.status(404).json({ error: "Game not found" });
-      if (game.status !== 0) return res.status(409).json({ error: "This game is currently unavailable" });
+      if (game.providerStatus !== 0) return res.status(409).json({ error: "This game is currently unavailable" });
 
       const player = ensureProviderPlayer(user.id, user.country);
       const pendingOut = findPendingGameWalletTransfer(user.id, "out");
