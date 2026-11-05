@@ -1053,10 +1053,10 @@ watch(() => [route.path, signedIn.value] as const, ([path, isSignedIn]) => {
 watch(() => route.path, (path) => {
   if (path !== "/games" && activeGame.value) void closeGame();
   if (path === "/games" && !activeGame.value) {
-    if (showAllGames.value || query.value.trim() || selectedProvider.value) void loadGames();
+    if (gameLobbyTab.value === "hot" || showAllGames.value || query.value.trim()) void loadGames();
     else void loadGameSections();
   }
-  else if (path === "/") void loadGames();
+  else if (path === "/") void loadGameSections();
 });
 
 watch([signedIn, () => route.path, modal], ([isSignedIn, path, activeModal]) => {
@@ -1071,12 +1071,20 @@ watch([signedIn, () => route.path, modal], ([isSignedIn, path, activeModal]) => 
 
 onMounted(async () => {
   document.addEventListener("fullscreenchange", handleFullscreenChange);
+  window.addEventListener("scroll", handleHomeScroll, { passive: true });
+  homeSectionObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const category = (entry.target as HTMLElement).dataset.gameCategory;
+      if (category) void loadNextGameSection(category);
+    }
+  }, { rootMargin: "240px 0px" });
   promotionCarouselTimer = setInterval(() => {
     if (currentPage.value === "home" && activePromotions.value.length > 1) {
       homePromotionIndex.value = (homePromotionIndex.value + 1) % activePromotions.value.length;
     }
   }, 5000);
-  if (currentPage.value === "games" && !showAllGames.value) void loadGameSections();
+  if ((currentPage.value === "games" && !showAllGames.value) || currentPage.value === "home") void loadGameSections();
   else void loadGames();
   token.value = localStorage.getItem("b9_token") || "";
   try {
