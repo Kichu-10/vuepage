@@ -225,122 +225,173 @@
         </div>
       </section>
 
-      <template v-if="currentPage === 'games' && !activeGame">
+      <section v-if="currentPage === 'games' && !activeGame" class="game-lobby">
         <section v-if="maintenanceMode" class="maintenance-banner" role="status">
           Scheduled maintenance is active. Transactions and support may experience delays.
         </section>
-        <p v-if="showGameCatalog && gamesLoading && games.length === 0" class="empty-state" role="status">Loading enabled games…</p>
-        <div v-else-if="showGameCatalog && gamesError" class="catalog-error" role="alert">
-          <p>{{ gamesError }}</p>
-          <button type="button" @click="loadGames">Try again</button>
-        </div>
-        <div v-else-if="showGameCatalog && games.length === 0" class="catalog-empty">
-          <h2>No games are available yet</h2>
-          <p>No games have been enabled for the public catalog yet.</p>
-          <button type="button" @click="loadGames">Reload games</button>
-        </div>
-      </template>
-
-      <section v-if="showGameSections" class="game-category-sections" aria-label="Games by category">
-        <article v-for="section in gameSections" :key="section.category" class="game-category-section">
-          <header class="game-category-heading">
-            <h2>{{ section.title }}</h2>
-            <button type="button" :aria-label="`View all ${section.title.toLowerCase()}`" @click="showAllCategory(section.category)">
-              View All <ChevronRight :size="17" />
-            </button>
-          </header>
-          <p v-if="section.loading" class="empty-state" role="status">Loading {{ section.title.toLowerCase() }}…</p>
-          <div v-else-if="section.error" class="catalog-error" role="alert">
-            <p>{{ section.error }}</p>
-            <button type="button" @click="loadGameSections">Try again</button>
-          </div>
-          <div v-else-if="section.games.length" class="game-category-strip" :aria-label="section.title">
-            <article
-              v-for="game in section.games"
-              :key="game.id"
-              class="game-card"
-              :class="[game.provider.toLowerCase().includes('pg') || game.gameType.toLowerCase().includes('slot') ? 'fortune-card' : 'fishing-card', { 'game-unavailable': game.status !== 0 }]"
-              role="button"
-              tabindex="0"
-              :aria-label="game.status === 0 ? `Play ${game.name}` : `${game.name} unavailable`"
-              :aria-disabled="game.status !== 0 || launchingGameId === game.id"
-              @click="play(game)"
-              @keydown.enter="play(game)"
-              @keydown.space.prevent="play(game)"
-            >
-              <img :src="gameArtwork(game)" :alt="game.name" loading="lazy" />
-              <div class="game-shade" />
-              <span class="game-brand">{{ game.provider }}</span>
-              <span class="game-art-title" aria-hidden="true">{{ game.name }}</span>
-              <span class="game-name">{{ launchingGameId === game.id ? "Opening..." : game.name }}</span>
-              <span v-if="game.status !== 0" class="game-status">{{ game.status === 1 ? "Maintenance" : "Unavailable" }}</span>
-              <button
-                class="favorite-button"
-                :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'"
-                @click.stop="toggleFavorite(game.id)"
-              ><Star :size="17" :fill="favorites.includes(game.id) ? 'currentColor' : 'none'" /></button>
-            </article>
-          </div>
-          <p v-else class="empty-state">No active games are assigned to {{ section.title.toLowerCase() }}.</p>
-        </article>
-      </section>
-
-      <section v-if="currentPage === 'home' || showGameCatalog" class="games-panel" :class="{ 'games-panel-full': currentPage === 'games' }">
-        <div class="section-heading">
-          <h2><Flame class="section-flame" :size="27" :fill="'currentColor'" />{{ query || selectedProvider ? "Results" : selectedCategory === "Popular" ? "All games" : selectedCategory }}</h2>
-          <button v-if="showGameCatalog" class="view-all" @click="returnToGameSections">
-            Back to categories <ChevronLeft :size="17" />
-          </button>
-          <button v-if="currentPage === 'home'" class="view-all" @click="navigateTo('/games')">
-            View All <ChevronRight :size="17" />
-          </button>
-        </div>
-        <p v-if="gamesLoading && games.length === 0" class="empty-state">Loading games...</p>
-        <p v-else-if="gamesError" class="empty-state">{{ gamesError }}</p>
-        <p v-else-if="!gamesLoading && !gamesError && visibleGames.length === 0" class="empty-state">No games found</p>
-        <div class="game-grid">
-          <article
-            v-for="game in visibleGames"
-            :key="game.id"
-            class="game-card"
-            :class="[game.provider.toLowerCase().includes('pg') || game.gameType.toLowerCase().includes('slot') ? 'fortune-card' : 'fishing-card', { 'game-unavailable': game.status !== 0 }]"
-            role="button"
-            tabindex="0"
-            :aria-label="game.status === 0 ? `Play ${game.name}` : `${game.name} unavailable`"
-            :aria-disabled="game.status !== 0 || launchingGameId === game.id"
-            @click="play(game)"
-            @keydown.enter="play(game)"
-            @keydown.space.prevent="play(game)"
-          >
-            <img :src="gameArtwork(game)" :alt="game.name" loading="lazy" />
-            <div class="game-shade" />
-            <span class="game-brand">{{ game.provider }}</span>
-            <span class="game-art-title" aria-hidden="true">{{ game.name }}</span>
-            <span class="game-name">{{ launchingGameId === game.id ? "Opening..." : game.name }}</span>
-            <span v-if="game.status !== 0" class="game-status">{{ game.status === 1 ? "Maintenance" : "Unavailable" }}</span>
+        <label class="game-lobby-search">
+          <input ref="gameLobbySearchInput" v-model="query" type="search" placeholder="Search" aria-label="Search games" />
+          <button v-if="query" type="button" aria-label="Clear search" @click="query = ''"><X :size="17" /></button>
+          <Search :size="20" aria-hidden="true" />
+        </label>
+        <nav class="game-lobby-tabs" aria-label="Game filters" role="tablist">
+          <button
+            v-for="tab in gameLobbyTabs"
+            :key="tab.id"
+            type="button"
+            role="tab"
+            :aria-selected="gameLobbyTab === tab.id"
+            :class="{ active: gameLobbyTab === tab.id }"
+            @click="selectGameLobbyTab(tab.id)"
+          >{{ tab.label }}</button>
+        </nav>
+        <div class="game-lobby-layout">
+          <aside class="game-provider-sidebar" aria-label="Game providers">
+            <p class="game-provider-sidebar-title">Providers</p>
             <button
-              class="favorite-button"
-              :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'"
-              @click.stop="toggleFavorite(game.id)"
-            ><Star :size="17" :fill="favorites.includes(game.id) ? 'currentColor' : 'none'" /></button>
-          </article>
-        </div>
-        <div v-if="currentPage === 'games' && gamesLoading && visibleGames.length > 0" class="games-loading-more" role="status" aria-label="Loading more games">
-          <span class="loading-spinner" aria-hidden="true"></span>
-          <span>Loading more games…</span>
-        </div>
-        <div
-          v-if="currentPage === 'games' && !gamesLoading && !gamesError && hasMoreGames"
-          ref="gamesLoadSentinel"
-          class="games-load-sentinel"
-          aria-hidden="true"
-        ></div>
-        <div v-if="currentPage === 'games' && !gamesLoading && !gamesError && games.length > 0 && !hasMoreGames" class="games-end-message" role="status">
-          You’ve reached the end of the game list.
-        </div>
-        <div v-if="currentPage === 'games' && gamesError && games.length > 0" class="catalog-error games-load-error" role="alert">
-          <p>{{ gamesError }}</p>
-          <button type="button" @click="loadGames">Try again</button>
+              type="button"
+              class="game-provider-option"
+              :class="{ active: !selectedProvider }"
+              aria-label="Show all providers"
+              :aria-pressed="!selectedProvider"
+              @click="selectGameProvider('')"
+            >
+              <span class="game-provider-logo game-provider-all"><Gamepad2 :size="21" /></span>
+              <span>All</span>
+            </button>
+            <button
+              v-for="provider in gameProviders"
+              :key="provider.code"
+              type="button"
+              class="game-provider-option"
+              :class="{ active: selectedProvider === provider.code }"
+              :aria-label="`Show ${provider.name} games`"
+              :aria-pressed="selectedProvider === provider.code"
+              @click="selectGameProvider(provider.code)"
+            >
+              <span class="game-provider-logo">{{ providerInitials(provider.name) }}</span>
+              <span>{{ provider.name }}</span>
+            </button>
+            <p v-if="!gameProviders.length" class="game-provider-empty">Providers appear when games are available.</p>
+          </aside>
+          <div class="game-lobby-main">
+            <section v-if="showGameSections" class="game-category-sections lobby-category-sections" aria-label="Games by category">
+              <article v-for="section in gameSections" :key="section.category" class="game-category-section">
+                <header class="game-category-heading">
+                  <h2><component :is="homeSectionIcon(section.category)" :size="20" />{{ section.title }}</h2>
+                  <button type="button" :aria-label="`View all ${section.title.toLowerCase()}`" @click="showAllCategory(section.category)">
+                    View All <ChevronRight :size="17" />
+                  </button>
+                </header>
+                <p v-if="section.loading && !section.games.length" class="empty-state" role="status">Loading {{ section.title.toLowerCase() }}…</p>
+                <div v-else-if="section.error" class="catalog-error" role="alert">
+                  <p>{{ section.error }}</p>
+                  <button type="button" @click="retryGameSection(section)">Try again</button>
+                </div>
+                <template v-else>
+                  <div v-if="section.games.length" class="game-grid lobby-game-grid" :aria-label="section.title">
+                    <article
+                      v-for="game in section.games"
+                      :key="game.id"
+                      class="game-card lobby-game-card"
+                      :class="{ 'game-unavailable': game.status !== 0, 'lobby-card-no-thumbnail': !game.thumbnail }"
+                      role="button"
+                      tabindex="0"
+                      :aria-label="game.status === 0 ? `Play ${game.name}` : `${game.name} unavailable`"
+                      :aria-disabled="game.status !== 0 || launchingGameId === game.id"
+                      @click="play(game)"
+                      @keydown.enter="play(game)"
+                      @keydown.space.prevent="play(game)"
+                    >
+                      <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" />
+                      <span v-if="game.isPopular" class="lobby-hot-badge">Hot</span>
+                      <span class="lobby-game-name">{{ launchingGameId === game.id ? "Opening..." : game.name }}</span>
+                      <button class="favorite-button" :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'" @click.stop="toggleFavorite(game.id)">
+                        <Star :size="17" :fill="favorites.includes(game.id) ? 'currentColor' : 'none'" />
+                      </button>
+                    </article>
+                  </div>
+                  <p v-else-if="!section.loading" class="game-lobby-empty">No enabled games in {{ section.title }}{{ selectedProvider ? " for this provider" : "" }}.</p>
+                  <div
+                    v-if="section.page > 0 && section.page < section.pageCount"
+                    :ref="(element) => observeHomeSectionSentinel(section.category, element)"
+                    class="home-section-load-sentinel"
+                    :data-game-category="section.category"
+                    aria-hidden="true"
+                  ></div>
+                  <div v-if="section.loading && section.games.length" class="home-section-loading" role="status">
+                    <span class="loading-spinner" aria-hidden="true"></span> Loading more games…
+                  </div>
+                </template>
+              </article>
+            </section>
+            <section v-else-if="showGameCatalog" class="game-lobby-results" aria-label="Games">
+              <header class="game-lobby-results-heading">
+                <h1>{{ query ? "Search results" : `${selectedCategory} Games` }}</h1>
+                <span v-if="gameCatalogTotal">{{ gameCatalogTotal }} games</span>
+              </header>
+              <p v-if="gamesLoading && !games.length" class="game-lobby-empty" role="status">Loading enabled games…</p>
+              <div v-else-if="gamesError" class="catalog-error" role="alert">
+                <p>{{ gamesError }}</p>
+                <button type="button" @click="loadGames">Try again</button>
+              </div>
+              <div v-else-if="games.length" class="game-grid lobby-game-grid">
+                <article
+                  v-for="game in games"
+                  :key="game.id"
+                  class="game-card lobby-game-card"
+                  :class="{ 'game-unavailable': game.status !== 0, 'lobby-card-no-thumbnail': !game.thumbnail }"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="game.status === 0 ? `Play ${game.name}` : `${game.name} unavailable`"
+                  :aria-disabled="game.status !== 0 || launchingGameId === game.id"
+                  @click="play(game)"
+                  @keydown.enter="play(game)"
+                  @keydown.space.prevent="play(game)"
+                >
+                  <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" />
+                  <span v-if="game.isPopular" class="lobby-hot-badge">Hot</span>
+                  <span class="lobby-game-name">{{ launchingGameId === game.id ? "Opening..." : game.name }}</span>
+                  <button class="favorite-button" :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'" @click.stop="toggleFavorite(game.id)">
+                    <Star :size="17" :fill="favorites.includes(game.id) ? 'currentColor' : 'none'" />
+                  </button>
+                </article>
+              </div>
+              <p v-else-if="!gamesLoading" class="game-lobby-empty">No enabled games match your filters.</p>
+              <div v-if="gamesLoading && games.length" class="games-loading-more" role="status"><span class="loading-spinner" aria-hidden="true"></span> Loading more games…</div>
+              <div v-if="!gamesLoading && !gamesError && hasMoreGames" ref="gamesLoadSentinel" class="games-load-sentinel" aria-hidden="true"></div>
+              <div v-if="!gamesLoading && !gamesError && games.length > 0 && !hasMoreGames" class="games-end-message" role="status">You’ve reached the end of the game list.</div>
+            </section>
+            <section v-else class="game-lobby-results" :aria-label="gameLobbyTab === 'recent' ? 'Recently played games' : 'Favorite games'">
+              <header class="game-lobby-results-heading">
+                <h1>{{ gameLobbyTab === "recent" ? "Recently Played" : "Favorites" }}</h1>
+                <span>{{ filteredLobbyGames.length }} games</span>
+              </header>
+              <div v-if="filteredLobbyGames.length" class="game-grid lobby-game-grid">
+                <article
+                  v-for="game in filteredLobbyGames"
+                  :key="game.id"
+                  class="game-card lobby-game-card"
+                  :class="{ 'game-unavailable': game.status !== 0, 'lobby-card-no-thumbnail': !game.thumbnail }"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="game.status === 0 ? `Play ${game.name}` : `${game.name} unavailable`"
+                  :aria-disabled="game.status !== 0 || launchingGameId === game.id"
+                  @click="play(game)"
+                  @keydown.enter="play(game)"
+                  @keydown.space.prevent="play(game)"
+                >
+                  <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" />
+                  <span v-if="game.isPopular" class="lobby-hot-badge">Hot</span>
+                  <span class="lobby-game-name">{{ game.name }}</span>
+                  <button class="favorite-button" :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'" @click.stop="toggleFavorite(game.id)">
+                    <Star :size="17" :fill="favorites.includes(game.id) ? 'currentColor' : 'none'" />
+                  </button>
+                </article>
+              </div>
+              <p v-else class="game-lobby-empty">{{ query || selectedProvider ? "No games match your filters." : gameLobbyTab === "recent" ? "Games you play will appear here." : "Tap a star on a game to add it to Favorites." }}</p>
+            </section>
+          </div>
         </div>
       </section>
 
@@ -700,23 +751,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch, type ComponentPublicInstance } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useSessionStore } from "./stores/session";
 import PublicHeader from "./components/PublicHeader.vue";
 import BottomNav from "./components/BottomNav.vue";
 import BonusBanner from "./components/BonusBanner.vue";
 import {
-  ChevronLeft, ChevronRight, Flame, Gift, LifeBuoy,
+  ArrowUp, ChevronLeft, ChevronRight, Fish, Flame, Gamepad2, Gift, LifeBuoy, Spade,
   LogOut, Mail, Search, ShieldCheck, Star, UserRound,
   Volume2, Wallet, X,
 } from "lucide-vue-next";
 import fish from "./assets/g-fish.jpg";
 import slot from "./assets/g-slot.jpg";
-import aviator from "./assets/g-aviator.jpg";
-import aviatrix from "./assets/g-aviatrix.jpg";
-import chicken from "./assets/g-chicken.jpg";
-import mines from "./assets/g-mines.jpg";
 import b9Logo from "./assets/b9-logo.jpg";
 import jackpotBanner from "./assets/jackpot-banner.jpg";
 import popularCategory from "./assets/01_popular.png";
