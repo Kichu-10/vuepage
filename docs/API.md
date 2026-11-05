@@ -41,6 +41,8 @@ Withdrawals require verified KYC and valid destination details. A deposit requir
 
 Wallet amounts are numeric values in the account's currency. The customer interface displays INR and NPR as `Rs.` and PKR as `PKR`; game-provider APIs continue to use their configured ISO currency codes.
 
+Deposits and withdrawals use a manual operations flow: an administrator must verify a deposit before approving its credit, and must verify and manually send a withdrawal before approving its debit. No payment gateway or automatic payout processor is integrated.
+
 ## Game provider
 
 The integration uses the provider's **transfer wallet** flow. Funds move between the app wallet and the provider wallet through authenticated, idempotent transfers; wagers are handled inside the provider.
