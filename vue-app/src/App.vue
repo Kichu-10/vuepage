@@ -1107,6 +1107,11 @@ onMounted(async () => {
 });
 onUnmounted(() => {
   document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  window.removeEventListener("scroll", handleHomeScroll);
+  homeSectionObserver?.disconnect();
+  homeSectionObserver = undefined;
+  homeGameStrips.clear();
+  homeSectionSentinels.clear();
   gamesLoadObserver?.disconnect();
   if (gameFilterReloadTimer) clearTimeout(gameFilterReloadTimer);
   gamesRequestId += 1;
@@ -1251,15 +1256,6 @@ function formatMoney(value: number): string {
 }
 function displayCurrency(currency: string): string {
   return currency === "INR" || currency === "NPR" ? "Rs." : currency;
-}
-function gameArtwork(game: Game): string {
-  if (game.thumbnail) return game.thumbnail;
-  const search = `${game.name} ${game.provider} ${game.gameType}`.toLowerCase();
-  if (/aviatrix|aviator|crash|spribe/.test(search)) return search.includes("aviatrix") ? aviatrix : aviator;
-  if (/chicken|road/.test(search)) return chicken;
-  if (/mine|gem/.test(search)) return mines;
-  if (/fish|fishing/.test(search)) return fish;
-  return slot;
 }
 function formatDate(value: string): string {
   const date = new Date(value);
