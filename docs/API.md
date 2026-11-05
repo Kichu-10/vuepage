@@ -49,12 +49,14 @@ The integration uses the provider's **transfer wallet** flow. Funds move between
 
 | Method | Path | Access | Purpose |
 | --- | --- | --- | --- |
-| `GET` | `/api/games` | Public | Retrieve the provider's game catalog and availability |
+| `GET` | `/api/games?page=1&search=&provider=&category=&sort=` | Public | Retrieve one page from the admin-enabled game catalog |
 | `GET` | `/api/games/wallet` | User JWT | Read the authenticated user's provider-wallet balance |
 | `POST` | `/api/games/:gameId/launch` | User JWT | Transfer a player-selected amount to the provider wallet and return an HTTPS game URL |
 | `POST` | `/api/games/wallet/return` | User JWT | Transfer all provider-wallet funds back to the app wallet |
 
 Launch requests include a JSON `amount` in the user's currency (100–100000000, at most two decimal places) and optional `platform`. The server validates available Main Wallet funds and pending withdrawal reservations atomically. Only the selected amount moves into the provider Game Wallet; the remaining Main Wallet balance is untouched. Winnings accrue in the provider Game Wallet while playing and remain there when the embedded game closes. Closing a game only removes its iframe and refreshes the displayed provider balance; no funds move to Main Wallet automatically. An authenticated user can explicitly request a transfer of the full provider-confirmed Game Wallet balance with `POST /api/games/wallet/return`.
+
+The public catalog returns only games explicitly enabled by an administrator under an enabled provider. The response includes `games`, `page`, `pageSize`, `total`, `pageCount`, `hasMore`, `providers`, and `categories`. `pageSize` is selected by an administrator (1–100); the website loads further pages as the player scrolls. Game IDs are unique across providers, and normalized game names are unique in the managed catalog.
 
 Transfers use a stable local transaction ID as the provider idempotency key. A timeout or duplicate-transfer response leaves the transfer pending so retrying reuses the same ID; refunds are never retried under a new ID while an earlier outcome is uncertain. A duplicate-transfer response returns HTTP 409 with its transaction ID for support reconciliation. HUIDU's published API does not document a separate server-side game-session close endpoint.
 
@@ -89,7 +91,18 @@ All routes below require an administrator JWT, an active administrator account, 
 | `GET` | `/api/admin/support` | List support tickets |
 | `PATCH` | `/api/admin/support/:id` | Update or reply to a support ticket |
 | `POST` | `/api/admin/game-results` | Record a game result |
+| `GET` | `/api/admin/game-management` | List managed providers and games, catalog counts, and page size |
+| `GET` | `/api/admin/game-management/provider-catalog` | List providers available from the configured HUIDU API |
+| `POST` | `/api/admin/game-management/providers` | Add an available provider; new records default to disabled |
+| `PATCH` | `/api/admin/game-management/providers/:code` | Edit provider display name or enabled state |
+| `GET` | `/api/admin/game-management/providers/:code/catalog` | List games available from a managed provider |
+| `POST` | `/api/admin/game-management/games` | Import a game from its provider; imported games default to disabled |
+| `PATCH` | `/api/admin/game-management/games/:id` | Edit game display metadata/order or enabled state |
+| `DELETE` | `/api/admin/game-management/games/:id` | Disable a game from public listings without deleting its record |
+| `PATCH` | `/api/admin/game-management/catalog-settings` | Set public games per page (1–100) |
 | `GET` | `/uploads/:filename` | Retrieve an uploaded document; administrator authentication required |
+
+HUIDU API credentials remain configured on the backend through server environment variables. Admin responses expose only whether the integration is configured; they never return agency IDs or encryption keys. Provider/game records and public selection state are persisted in SQLite.
 
 ## Error behavior
 

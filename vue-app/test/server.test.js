@@ -80,9 +80,10 @@ function huiduResponse(payload) {
 }
 
 function resetDatabase({ users = [account, admin], transactions = [] } = {}) {
-  for (const table of ["game_wallet_transfers", "game_players", "ledger_entries", "game_results"]) {
+  for (const table of ["managed_games", "game_providers", "game_wallet_transfers", "game_players", "ledger_entries", "game_results"]) {
     database.db.exec(`DELETE FROM ${table}`);
   }
+  database.db.prepare("UPDATE game_catalog_settings SET page_size = 24 WHERE id = 1").run();
   database.writeDb({
     users,
     transactions,
@@ -175,6 +176,100 @@ test("admin endpoints reject anonymous and regular-user requests", async () => {
     .set("Authorization", `Bearer ${tokenFor(account)}`)
     .send({ status: "approved" })
     .expect(403);
+});
+
+test("admin game management imports, publishes, paginates, and disables catalog entries", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const requestUrl = new URL(String(url));
+    if (requestUrl.pathname === "/game/providers") {
+      return { ok: true, json: async () => ({
+        code: 0,
+        data: [
+          { code: "pg", name: "PGSoft", status: 1 },
+          { code: "jili", name: "JILI", status: 1 },
+        ],
+      }) };
+    }
+    if (requestUrl.pathname === "/game/list") {
+      if (requestUrl.searchParams.get("code") === "jili") {
+        return { ok: true, json: async () => ({
+          code: 0,
+          data: [{ game_uid: "game-3", game_name: "Game One", game_type: "Slots", status: 1 }],
+        }) };
+      }
+      return { ok: true, json: async () => ({
+        code: 0,
+        data: [
+          { game_uid: "game-1", game_name: "Game One", game_type: "Slots", status: 1 },
+          { game_uid: "game-2", game_name: "Game Two", game_type: "Fishing", status: 1 },
+        ],
+      }) };
+    }
+    throw new Error(`Unexpected provider URL ${url}`);
+  };
+  try {
+    const headers = { Authorization: `Bearer ${tokenFor(admin)}` };
+    const initial = await request(app).get("/api/admin/game-management").set(headers).expect(200);
+    assert.deepEqual(initial.body.stats, { totalProviders: 0, totalGames: 0, availableGames: 0, activeGames: 0, disabledGames: 0 });
+    assert.equal(initial.body.providerApiConfigured, true);
+    assert.doesNotMatch(JSON.stringify(initial.body), /test-agency|0123456789abcdef/);
+
+    const sources = await request(app).get("/api/admin/game-management/provider-catalog").set(headers).expect(200);
+    assert.deepEqual(sources.body.providers, [{ code: "pg", name: "PGSoft" }, { code: "jili", name: "JILI" }]);
+    const provider = await request(app).post("/api/admin/game-management/providers").set(headers)
+      .send({ code: "pg" }).expect(201);
+    assert.equal(provider.body.provider.enabled, false);
+
+    const providerGames = await request(app).get("/api/admin/game-management/providers/pg/catalog").set(headers).expect(200);
+    assert.equal(providerGames.body.games.length, 2);
+    const firstGame = await request(app).post("/api/admin/game-management/games").set(headers)
+      .send({ providerCode: "pg", externalId: "game-1", category: "Slots", thumbnail: "", sortOrder: 1 }).expect(201);
+    assert.equal(firstGame.body.game.enabled, false);
+    await request(app).post("/api/admin/game-management/games").set(headers)
+      .send({ providerCode: "pg", externalId: "game-2", category: "Fishing", sortOrder: 2 }).expect(201);
+    await request(app).post("/api/admin/game-management/games").set(headers)
+      .send({ providerCode: "pg", externalId: "game-1" }).expect(409);
+    await request(app).post("/api/admin/game-management/providers").set(headers)
+      .send({ code: "jili" }).expect(201);
+    await request(app).post("/api/admin/game-management/games").set(headers)
+      .send({ providerCode: "jili", externalId: "game-3" }).expect(409);
+    assert.equal((await request(app).get("/api/games").expect(200)).body.total, 0);
+    await request(app).post("/api/games/game-1/launch")
+      .set("Authorization", `Bearer ${tokenFor(account)}`).send({ amount: 100 }).expect(404);
+
+    await request(app).patch("/api/admin/game-management/providers/pg").set(headers)
+      .send({ enabled: true }).expect(200);
+    await request(app).patch("/api/admin/game-management/games/game-1").set(headers)
+      .send({ enabled: true }).expect(200);
+    await request(app).patch("/api/admin/game-management/games/game-2").set(headers)
+      .send({ enabled: true }).expect(200);
+    await request(app).patch("/api/admin/game-management/catalog-settings").set(headers)
+      .send({ pageSize: 1 }).expect(200);
+
+    const firstPage = await request(app).get("/api/games?page=1").expect(200);
+    assert.equal(firstPage.body.pageSize, 1);
+    assert.equal(firstPage.body.total, 2);
+    assert.equal(firstPage.body.hasMore, true);
+    const secondPage = await request(app).get("/api/games?page=2").expect(200);
+    assert.equal(secondPage.body.games.length, 1);
+    const categoryPage = await request(app).get("/api/games?category=Fishing").expect(200);
+    assert.deepEqual(categoryPage.body.games.map((game) => game.id), ["game-2"]);
+    const searchPage = await request(app).get("/api/games?search=Game%20One").expect(200);
+    assert.deepEqual(searchPage.body.games.map((game) => game.id), ["game-1"]);
+
+    await request(app).delete("/api/admin/game-management/games/game-1").set(headers).expect(200);
+    assert.equal((await request(app).get("/api/games").expect(200)).body.total, 1);
+    assert.equal(database.getManagedGame("game-1").enabled, false);
+    assert.equal(database.getManagedProvider("pg").enabled, true);
+    assert.equal((await request(app).get("/api/admin/game-management").set(headers).expect(200)).body.stats.activeGames, 1);
+    await request(app).patch("/api/admin/game-management/providers/pg").set(headers)
+      .send({ enabled: false }).expect(200);
+    assert.equal((await request(app).get("/api/games").expect(200)).body.total, 0);
+    await request(app).get("/api/admin/game-management").expect(401);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("promotions are available only to signed-in users and admin settings control visibility", async () => {
@@ -704,14 +799,15 @@ test.skip("obsolete legacy-provider return-funds test", async () => {
   }
 });
 
-test("HUIDU catalog errors are surfaced without exposing request credentials", async () => {
+test("Admin provider catalog errors are surfaced without exposing request credentials", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     assert.match(String(url), /\/game\/providers\?/);
     return { ok: true, json: async () => ({ code: 10022, msg: "Invalid parameters" }) };
   };
   try {
-    const response = await request(app).get("/api/games").expect(502);
+    const response = await request(app).get("/api/admin/game-management/provider-catalog")
+      .set("Authorization", `Bearer ${tokenFor(admin)}`).expect(502);
     assert.equal(response.body.error, "Invalid parameters");
     assert.equal(response.body.code, 10022);
     assert.doesNotMatch(JSON.stringify(response.body), /test-agency|0123456789/);
@@ -732,6 +828,25 @@ test("HUIDU maps supplier game UIDs and launches with an atomic wallet credit", 
       status: "pending",
       createdAt: new Date().toISOString(),
     }],
+  });
+  database.saveManagedProvider({ code: "pg", name: "PGSoft", enabled: true });
+  database.addManagedGame({
+    providerCode: "pg",
+    externalId: "83a6890cf84e4c5a6bacf96d5355d472",
+    name: "Queen of Bounty",
+    gameType: "Slot Game",
+    category: "Slot Game",
+    sortOrder: 1,
+    enabled: true,
+    providerStatus: 0,
+  });
+  database.addManagedGame({
+    providerCode: "pg",
+    externalId: "null-game-type",
+    name: "Game without a type",
+    sortOrder: 2,
+    enabled: true,
+    providerStatus: 0,
   });
   const originalFetch = globalThis.fetch;
   const transferIds = [];
@@ -790,6 +905,8 @@ test("HUIDU maps supplier game UIDs and launches with an atomic wallet credit", 
       provider: "PGSoft",
       providerCode: "pg",
       gameType: "Slot Game",
+      category: "Slot Game",
+      thumbnail: "",
       status: 0,
     }, {
       id: "null-game-type",
@@ -797,6 +914,8 @@ test("HUIDU maps supplier game UIDs and launches with an atomic wallet credit", 
       provider: "PGSoft",
       providerCode: "pg",
       gameType: "",
+      category: "",
+      thumbnail: "",
       status: 0,
     }]);
 
@@ -855,6 +974,14 @@ test("game funding rejects invalid decimal precision before contacting HUIDU", a
 
 test("HUIDU ambiguous launch retries reuse the original transfer ID", async () => {
   resetDatabase({ users: [{ ...account, country: "IN", balance: 500 }, admin] });
+  database.saveManagedProvider({ code: "pg", name: "PGSoft", enabled: true });
+  database.addManagedGame({
+    providerCode: "pg",
+    externalId: "83a6890cf84e4c5a6bacf96d5355d472",
+    name: "Queen of Bounty",
+    enabled: true,
+    providerStatus: 0,
+  });
   const originalFetch = globalThis.fetch;
   const transferIds = [];
   let simulateTimeout = true;
