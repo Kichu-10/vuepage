@@ -97,7 +97,7 @@ app.use("/api/auth", createKycRouter(uploadDir));
 app.use("/api/admin", createAdminAuthRouter());
 app.use("/api/admin", createAdminRouter(uploadDir));
 app.use("/api", createSupportRouter());
-app.use("/api/games", createGamesRouter());
+app.use("/api/games", createGamesRouter(uploadDir));
 app.use("/api/promotions", createPromotionsRouter(uploadDir));
 
 function auth(req, res, next) {

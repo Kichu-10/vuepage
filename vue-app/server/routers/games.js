@@ -1,4 +1,6 @@
 import express from "express";
+import fs from "node:fs";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { authenticate } from "../middleware/auth.js";
 import {
@@ -7,7 +9,9 @@ import {
   ensureGamePlayer,
   failGameWalletTransfer,
   findPendingGameWalletTransfer,
+  GAME_CATEGORIES,
   getPublicGameCatalog,
+  getManagedGame,
   getPublicManagedGame,
   getGamePlayer,
   markGamePlayerCreated,
@@ -43,17 +47,36 @@ function ensureProviderPlayer(userId, country) {
   return ensureGamePlayer(userId, currencyForCountry(country), huiduPlayerPrefix());
 }
 
-export function createGamesRouter() {
+export function createGamesRouter(uploadDir) {
   const router = express.Router();
 
   router.get("/", (req, res) => {
     const pageText = req.query.page === undefined ? "1" : String(req.query.page);
     if (!/^\d{1,6}$/.test(pageText)) return res.status(400).json({ error: "Invalid game page" });
     const category = typeof req.query.category === "string" ? req.query.category.trim().slice(0, 80) : "";
+    if (category && !["Popular", "PG Slot", "Spribe", "InOut", ...GAME_CATEGORIES].includes(category)) {
+      return res.status(400).json({ error: "Invalid game category" });
+    }
     const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
     const provider = typeof req.query.provider === "string" ? req.query.provider.trim().slice(0, 80) : "";
     const sort = ["popular", "name", "provider"].includes(String(req.query.sort)) ? String(req.query.sort) : "popular";
     res.json(getPublicGameCatalog({ page: Number(pageText), search, provider, category, sort }));
+  });
+
+  router.get("/:gameId/thumbnail/:filename", (req, res) => {
+    const game = getManagedGame(req.params.gameId);
+    const filename = path.basename(req.params.filename);
+    const expectedUrl = `/api/games/${encodeURIComponent(req.params.gameId)}/thumbnail/${filename}`;
+    if (!game || game.thumbnail !== expectedUrl || !/^[a-f0-9-]{36}\.(?:jpg|png|webp)$/i.test(filename)) {
+      return res.status(404).json({ error: "Game thumbnail not found" });
+    }
+    const filePath = path.join(uploadDir, "game-thumbnails", filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Game thumbnail not found" });
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.type(path.extname(filename));
+    res.sendFile(filePath, { dotfiles: "deny" }, (error) => {
+      if (error && !res.headersSent) res.status(error.statusCode || 500).json({ error: "Could not load game thumbnail" });
+    });
   });
 
   router.get("/wallet", authenticate, async (req, res) => {

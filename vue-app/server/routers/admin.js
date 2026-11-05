@@ -15,6 +15,7 @@ import {
   getGameManagementStats,
   getManagedGame,
   getManagedProvider,
+  listGameCategories,
   listManagedGames,
   listManagedProviders,
   readDb,
@@ -83,7 +84,8 @@ function validThumbnail(value) {
 const gameImportSchema = z.object({
   providerCode: providerCodeSchema,
   externalId: z.string().trim().min(1).max(120).regex(/^[a-zA-Z0-9_-]+$/),
-  category: z.string().trim().max(80).optional().default(""),
+  category: z.enum(["Mini Games", "Slots", "Fishing"]).optional().default("Mini Games"),
+  isPopular: z.boolean().optional().default(false),
   thumbnail: z.string().trim().max(500).optional().default("").refine(
     validThumbnail,
     "Thumbnail must be an HTTPS URL or a site-relative path",
@@ -91,13 +93,15 @@ const gameImportSchema = z.object({
   sortOrder: z.number().int().min(-100000).max(100000).optional().default(0),
 });
 const gameUpdateSchema = z.object({
+  providerCode: providerCodeSchema.optional(),
   name: z.string().trim().min(1).max(160).optional(),
   thumbnail: z.string().trim().max(500).optional().refine(
     (value) => value === undefined || validThumbnail(value),
     "Thumbnail must be an HTTPS URL or a site-relative path",
   ),
-  category: z.string().trim().max(80).optional(),
+  category: z.enum(["Mini Games", "Slots", "Fishing"]).optional(),
   sortOrder: z.number().int().min(-100000).max(100000).optional(),
+  isPopular: z.boolean().optional(),
   enabled: z.boolean().optional(),
 }).refine((value) => Object.keys(value).length > 0, "Provide game changes");
 const catalogSettingsSchema = z.object({
@@ -153,10 +157,17 @@ function identifyPromotionImage(buffer) {
 export function createAdminRouter(uploadDir) {
   const router = express.Router();
   const promotionImageDir = path.join(uploadDir, "promotion-banners");
+  const gameThumbnailDir = path.join(uploadDir, "game-thumbnails");
   fs.mkdirSync(promotionImageDir, { recursive: true });
+  fs.mkdirSync(gameThumbnailDir, { recursive: true });
   const uploadPromotionImage = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+    fileFilter: (_req, file, callback) => callback(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)),
+  });
+  const uploadGameThumbnail = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 3 * 1024 * 1024, files: 1 },
     fileFilter: (_req, file, callback) => callback(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)),
   });
   router.use((req, res, next) => req.path === "/auth/login" ? next() : authenticate(req, res, next));
@@ -223,6 +234,7 @@ export function createAdminRouter(uploadDir) {
     res.json({
       providers,
       games,
+      categories: listGameCategories(),
       stats: getGameManagementStats(),
       pageSize: getGameCatalogPageSize(),
       providerApiConfigured: isHuiduConfigured(),
@@ -301,7 +313,8 @@ export function createAdminRouter(uploadDir) {
         externalId: sourceGame.id,
         name: sourceGame.name,
         thumbnail: req.body.thumbnail,
-        category: req.body.category || sourceGame.gameType,
+        category: req.body.category,
+        isPopular: req.body.isPopular,
         gameType: sourceGame.gameType,
         sortOrder: req.body.sortOrder,
         enabled: false,
@@ -317,14 +330,37 @@ export function createAdminRouter(uploadDir) {
     }
   });
 
-  router.patch("/game-management/games/:id", validate(gameUpdateSchema), (req, res) => {
+  router.patch("/game-management/games/:id", validate(gameUpdateSchema), async (req, res) => {
     const existing = getManagedGame(req.params.id);
     if (!existing) return res.status(404).json({ error: "Managed game not found" });
     if (req.body.enabled === true && existing.providerStatus !== 0) {
       return res.status(409).json({ error: "This provider currently reports the game as unavailable" });
     }
+    let selectedSourceGame;
+    if (req.body.providerCode && req.body.providerCode !== existing.providerCode) {
+      const provider = getManagedProvider(req.body.providerCode);
+      if (!provider) return res.status(404).json({ error: "Select a managed game provider" });
+      try {
+        const sourceGames = await listGamesFromProviderCode(provider.code);
+        selectedSourceGame = sourceGames.find((game) => game.id === existing.externalId);
+        if (!selectedSourceGame) {
+          return res.status(400).json({ error: "The selected provider does not have this game ID" });
+        }
+      } catch (error) {
+        return catalogFailure(res, error, "Could not verify the selected game provider");
+      }
+      if (req.body.enabled === true && selectedSourceGame.status !== 0) {
+        return res.status(409).json({ error: "The selected provider reports this game as unavailable" });
+      }
+    }
     try {
-      const game = updateManagedGame(existing.id, req.body);
+      const game = updateManagedGame(existing.id, {
+        ...req.body,
+        ...(selectedSourceGame ? {
+          gameType: selectedSourceGame.gameType,
+          providerStatus: selectedSourceGame.status,
+        } : {}),
+      });
       recordGameManagementAudit(req.user.id, "GAME_UPDATED", game.name, `Game ${game.enabled ? "enabled" : "disabled or updated"}`);
       res.json({ game });
     } catch (error) {
@@ -333,6 +369,51 @@ export function createAdminRouter(uploadDir) {
       }
       logger.error("admin_managed_game_update_failed", { gameId: existing.id, error: error instanceof Error ? error.message : String(error) });
       res.status(500).json({ error: "Could not update game" });
+    }
+  });
+
+  router.post("/game-management/games/:id/thumbnail", (req, res, next) => {
+    uploadGameThumbnail.single("thumbnail")(req, res, (error) => {
+      if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ error: "Game thumbnails must be 3 MB or smaller" });
+      }
+      if (error) return next(error);
+      next();
+    });
+  }, async (req, res) => {
+    const game = getManagedGame(req.params.id);
+    if (!game) return res.status(404).json({ error: "Managed game not found" });
+    if (!req.file) return res.status(400).json({ error: "Upload a valid JPEG, PNG, or WebP thumbnail" });
+    const extension = identifyPromotionImage(req.file.buffer);
+    if (!extension) return res.status(400).json({ error: "The thumbnail is not a valid JPEG, PNG, or WebP image" });
+
+    const filename = `${randomUUID()}.${extension}`;
+    const filePath = path.join(gameThumbnailDir, filename);
+    const thumbnailUrl = `/api/games/${encodeURIComponent(game.id)}/thumbnail/${filename}`;
+    let thumbnailUpdated = false;
+    try {
+      await fs.promises.writeFile(filePath, req.file.buffer, { flag: "wx" });
+      const updatedGame = updateManagedGame(game.id, { thumbnail: thumbnailUrl });
+      if (!updatedGame) throw new Error("Managed game disappeared during thumbnail upload");
+      thumbnailUpdated = true;
+      recordGameManagementAudit(req.user.id, "GAME_THUMBNAIL_UPDATED", game.name, "Game thumbnail uploaded");
+      if (game.thumbnail.startsWith(`/api/games/${encodeURIComponent(game.id)}/thumbnail/`)) {
+        const oldFilename = path.basename(game.thumbnail);
+        if (oldFilename !== filename) {
+          await fs.promises.rm(path.join(gameThumbnailDir, oldFilename), { force: true }).catch((error) => {
+            logger.warn("admin_game_thumbnail_cleanup_failed", { gameId: game.id, error: error instanceof Error ? error.message : String(error) });
+          });
+        }
+      }
+      res.json({ thumbnail: thumbnailUrl, game: getManagedGame(game.id) });
+    } catch (error) {
+      if (!thumbnailUpdated) await fs.promises.rm(filePath, { force: true });
+      logger.error("admin_game_thumbnail_upload_failed", { gameId: game.id, error: error instanceof Error ? error.message : String(error) });
+      res.status(500).json({
+        error: thumbnailUpdated
+          ? "Thumbnail was updated, but its audit record could not be saved"
+          : "Could not update game thumbnail",
+      });
     }
   });
 

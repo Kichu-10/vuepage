@@ -58,6 +58,8 @@ Launch requests include a JSON `amount` in the user's currency (100–100000000,
 
 The public catalog returns only games explicitly enabled by an administrator under an enabled provider. The response includes `games`, `page`, `pageSize`, `total`, `pageCount`, `hasMore`, `providers`, and `categories`. `pageSize` is selected by an administrator (1–100); the website loads further pages as the player scrolls. Game IDs are unique across providers, and normalized game names are unique in the managed catalog.
 
+Games are assigned one primary category (`Mini Games`, `Slots`, or `Fishing`) and may independently be marked `Popular`; Popular is an additional listing, not a duplicate game record. The public Games page loads a page for each category and its View All action uses the same paginated catalog endpoint. Administrators upload JPEG, PNG, or WebP thumbnails (up to 3 MB) through `POST /api/admin/game-management/games/:id/thumbnail`; the returned image URL is served by `/api/games/:gameId/thumbnail/:filename`.
+
 Transfers use a stable local transaction ID as the provider idempotency key. A timeout or duplicate-transfer response leaves the transfer pending so retrying reuses the same ID; refunds are never retried under a new ID while an earlier outcome is uncertain. A duplicate-transfer response returns HTTP 409 with its transaction ID for support reconciliation. HUIDU's published API does not document a separate server-side game-session close endpoint.
 
 `GET /api/games/wallet` returns the provider ISO currency code and numeric balance. New player accounts use the currency mapped from the signed-in user's saved country.
