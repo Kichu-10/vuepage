@@ -803,15 +803,51 @@ test("HUIDU maps supplier game UIDs and launches with an atomic wallet credit", 
     const response = await request(app)
       .post("/api/games/83a6890cf84e4c5a6bacf96d5355d472/launch")
       .set("Authorization", `Bearer ${tokenFor(account)}`)
-      .send({ platform: 2 })
+      .send({ amount: 300, platform: 2 })
       .expect(200);
     assert.equal(response.body.gameUrl, "https://games.provider.test/session");
     assert.equal(response.body.balance, 200);
+    assert.equal(response.body.gameWalletBalance, 300);
+    assert.equal(response.body.fundedAmount, 300);
+    assert.equal(response.body.transactionId, transferIds[0]);
     assert.equal(transferIds.length, 1);
     assert.ok(transferIds[0]);
     assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 200);
     assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 1);
     assert.equal(database.db.prepare("SELECT status FROM game_wallet_transfers").get().status, "completed");
+    const insufficient = await request(app)
+      .post("/api/games/83a6890cf84e4c5a6bacf96d5355d472/launch")
+      .set("Authorization", `Bearer ${tokenFor(account)}`)
+      .send({ amount: 100, platform: 2 })
+      .expect(409);
+    assert.equal(insufficient.body.error, "Insufficient available balance");
+    assert.equal(transferIds.length, 1);
+    assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 200);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("game funding rejects invalid decimal precision before contacting HUIDU", async () => {
+  resetDatabase({ users: [{ ...account, country: "IN", balance: 500 }, admin] });
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error("HUIDU should not be called for invalid amounts");
+  };
+  try {
+    const response = await request(app)
+      .post("/api/games/83a6890cf84e4c5a6bacf96d5355d472/launch")
+      .set("Authorization", `Bearer ${tokenFor(account)}`)
+      .send({ amount: 100.001 })
+      .expect(400);
+    assert.match(response.body.error, /valid game wallet funding amount/i);
+    assert.equal(fetchCalls, 0);
+    assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 500);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM game_wallet_transfers").get().count, 0);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -843,10 +879,15 @@ test("HUIDU ambiguous launch retries reuse the original transfer ID", async () =
   try {
     const headers = { Authorization: `Bearer ${tokenFor(account)}` };
     await request(app).post("/api/games/83a6890cf84e4c5a6bacf96d5355d472/launch")
-      .set(headers).send({}).expect(502);
+      .set(headers).send({ amount: 500 }).expect(502);
     assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 0);
+    const mismatch = await request(app).post("/api/games/83a6890cf84e4c5a6bacf96d5355d472/launch")
+      .set(headers).send({ amount: 100 }).expect(409);
+    assert.equal(mismatch.body.pendingAmount, 500);
+    assert.equal(mismatch.body.transactionId, transferIds[0]);
+    assert.equal(transferIds.length, 1);
     await request(app).post("/api/games/83a6890cf84e4c5a6bacf96d5355d472/launch")
-      .set(headers).send({}).expect(200);
+      .set(headers).send({ amount: 500 }).expect(200);
     assert.equal(transferIds.length, 2);
     assert.equal(transferIds[0], transferIds[1]);
     assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 1);
@@ -862,13 +903,14 @@ test("HUIDU wallet return queries the balance and credits the main wallet once",
   const originalFetch = globalThis.fetch;
   const transferIds = [];
   let simulateTimeout = true;
+  let providerBalanceCents = 4250;
   globalThis.fetch = async (url, options) => {
     const requestUrl = new URL(String(url));
     if (requestUrl.pathname !== "/game/v2") throw new Error(`Unexpected HUIDU URL ${url}`);
     const payload = decodeHuiduRequest(options);
     if (Number(payload.credit_amount) === 0) {
       assert.equal(payload.currency_code, player.currency);
-      return huiduResponse({ after_amount: "42.50", transfer_status: 1 });
+      return huiduResponse({ after_amount: (providerBalanceCents / 100).toFixed(2), transfer_status: 1 });
     }
     transferIds.push(payload.transfer_id);
     assert.equal(payload.credit_amount, "-42.50");
