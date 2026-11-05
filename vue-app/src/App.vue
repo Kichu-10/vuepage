@@ -884,11 +884,9 @@ const balance = ref(8891.2);
 const jackpot = ref(10799004.2);
 const favorites = ref<string[]>([]);
 const query = ref("");
-const searchOpen = ref(false);
 const modal = ref<Modal>(null);
 const signedIn = ref(false);
 const amount = ref("1000");
-const homeCategoryList = ref<HTMLElement | null>(null);
 const notice = ref("");
 const session = useSessionStore();
 const token = toRef(session, "userToken");
@@ -959,12 +957,22 @@ const currentPage = computed(() => route.path.slice(1) || "home");
 const activePromotions = computed(() => promotions.value.filter((promotion) => promotion.active));
 const showGameSections = computed(() => currentPage.value === "games"
   && !activeGame.value
+  && gameLobbyTab.value === "all"
   && !showAllGames.value
-  && !query.value.trim()
-  && !selectedProvider.value);
+  && !query.value.trim());
 const showGameCatalog = computed(() => currentPage.value === "games"
   && !activeGame.value
-  && !showGameSections.value);
+  && (gameLobbyTab.value === "hot" || (gameLobbyTab.value === "all" && !showGameSections.value)));
+const filteredLobbyGames = computed(() => {
+  const source = gameLobbyTab.value === "recent"
+    ? recentGames.value
+    : knownGames.value.filter((game) => favorites.value.includes(game.id));
+  const normalizedQuery = query.value.trim().toLowerCase();
+  return source.filter((game) =>
+    (!selectedProvider.value || game.providerCode === selectedProvider.value)
+    && (!normalizedQuery || game.name.toLowerCase().includes(normalizedQuery)),
+  );
+});
 const bannerSlides = [
   { id: "bonus", label: "first deposit bonus" },
   { id: "games", label: "games" },
