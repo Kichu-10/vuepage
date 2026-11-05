@@ -113,10 +113,9 @@
             {{ gameFullscreen ? "Exit fullscreen" : "Fullscreen" }}
           </button>
         </div>
-        <div class="game-player-frame">
+        <div ref="gamePlayerFrame" class="game-player-frame">
           <iframe
             v-if="activeGameUrl"
-            ref="gameFrame"
             :src="activeGameUrl"
             :title="`${activeGame.name} game`"
             allow="autoplay; fullscreen; gamepad"
@@ -707,7 +706,7 @@ const selectedGame = ref<Game | null>(null);
 const gameFundingAmount = ref("");
 const activeGame = ref<Game | null>(null);
 const activeGameUrl = ref("");
-const gameFrame = ref<HTMLIFrameElement | null>(null);
+const gamePlayerFrame = ref<HTMLElement | null>(null);
 const gameFrameLoading = ref(false);
 const gameFrameError = ref("");
 const gameFullscreen = ref(false);
@@ -1367,14 +1366,14 @@ function handleGameFrameError(): void {
   gameFrameError.value = "The browser could not load this game inside the website. HUIDU may require its documented direct-launch method.";
 }
 function handleFullscreenChange(): void {
-  gameFullscreen.value = document.fullscreenElement === gameFrame.value;
+  gameFullscreen.value = document.fullscreenElement === gamePlayerFrame.value;
 }
 async function toggleGameFullscreen(): Promise<void> {
-  const frame = gameFrame.value;
-  if (!frame) return;
+  const playerFrame = gamePlayerFrame.value;
+  if (!playerFrame) return;
   try {
-    if (document.fullscreenElement === frame) await document.exitFullscreen();
-    else await frame.requestFullscreen();
+    if (document.fullscreenElement === playerFrame) await document.exitFullscreen();
+    else await playerFrame.requestFullscreen();
   } catch (error) {
     notify(error instanceof Error ? `Fullscreen could not be opened: ${error.message}` : "Fullscreen is not available in this browser");
   }
@@ -1845,6 +1844,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .game-back-button { display: inline-flex; min-height: 40px; align-items: center; gap: 5px; padding: 7px 12px; border: 1px solid #dfe8e0; border-radius: 10px; color: #355342; background: #fff; font-weight: 700; }
 .game-fullscreen-button { min-height: 40px; padding: 7px 12px; border: 0; border-radius: 10px; color: #fff; background: #168446; font-weight: 700; white-space: nowrap; }
 .game-player-frame { position: relative; width: 100%; height: min(68vh, 760px); min-height: 340px; overflow: hidden; border: 1px solid #dfe8e0; border-radius: 15px; background: #101914; box-shadow: 0 6px 24px rgb(22 54 31 / 12%); }
+.page-frame.game-active .game-player-frame:fullscreen { width: 100vw; height: 100vh; height: 100dvh; min-height: 0; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
+.page-frame.game-active .game-player-frame:fullscreen::backdrop { background: #101914; }
 .game-player-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #101914; }
 .game-frame-status, .game-frame-error { position: absolute; z-index: 1; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; color: #fff; background: rgb(16 25 20 / 94%); text-align: center; }
 .game-frame-status { flex-direction: row; }
