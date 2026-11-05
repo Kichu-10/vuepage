@@ -325,13 +325,28 @@ test("wallet request validates before submit and completes a valid deposit", asy
   await expect(page.getByText("Deposit request submitted for admin approval", { exact: true })).toBeVisible();
 });
 
-test("game player uses the available viewport and requests fullscreen on the iframe", async ({ page }) => {
+test("game player uses the available viewport and toggles player fullscreen", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("b9_token", "playwright-test-token");
-    Object.defineProperty(HTMLIFrameElement.prototype, "requestFullscreen", {
+    let activeFullscreenElement: Element | null = null;
+    Object.defineProperty(document, "fullscreenElement", {
       configurable: true,
-      value: function (this: HTMLIFrameElement) {
-        document.documentElement.dataset.fullscreenTarget = this.title;
+      get: () => activeFullscreenElement,
+    });
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: function (this: HTMLElement) {
+        activeFullscreenElement = this;
+        document.documentElement.dataset.fullscreenTarget = this.className;
+        document.dispatchEvent(new Event("fullscreenchange"));
+        return Promise.resolve();
+      },
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      configurable: true,
+      value: () => {
+        activeFullscreenElement = null;
+        document.dispatchEvent(new Event("fullscreenchange"));
         return Promise.resolve();
       },
     });
@@ -393,7 +408,10 @@ test("game player uses the available viewport and requests fullscreen on the ifr
   expect(mobileFrame?.height).toBeGreaterThan(400);
   await expect(page.locator(".game-player-frame iframe")).toHaveAttribute("allowfullscreen", "");
   await page.getByRole("button", { name: "Fullscreen" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-fullscreen-target", "Sample Game game");
+  await expect(page.locator("html")).toHaveAttribute("data-fullscreen-target", "game-player-frame");
+  await expect(page.getByRole("button", { name: "Exit fullscreen" })).toBeVisible();
+  await page.getByRole("button", { name: "Exit fullscreen" }).click();
+  await expect(page.getByRole("button", { name: "Fullscreen" })).toBeVisible();
 
   await page.setViewportSize({ width: 1280, height: 800 });
   const desktopFrame = await page.locator(".game-player-frame").boundingBox();
