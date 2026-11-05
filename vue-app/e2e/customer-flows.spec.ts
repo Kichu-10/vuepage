@@ -134,17 +134,125 @@ test("navigation works and the homepage shows responsive category game sections"
   await page.getByRole("button", { name: "View all popular games" }).click();
   await expect(page.locator(".page-games .game-card")).toHaveCount(5);
   await page.getByRole("button", { name: "Search games" }).click();
-  await page.getByRole("textbox", { name: "Search games" }).fill("Game 4");
+  await page.getByRole("searchbox", { name: "Search games" }).fill("Game 4");
   await expect(page.locator(".page-games .game-card")).toHaveCount(1);
   await expect(page.locator(".page-games .game-card").first()).toContainText("Game 4");
-  await page.getByRole("button", { name: "Close search" }).click();
+  await page.getByRole("button", { name: "Clear search" }).click();
   await expect(page.locator(".page-games .game-card")).toHaveCount(5);
-  await page.getByRole("button", { name: "Back to categories" }).click();
+  await page.getByRole("tab", { name: "All" }).click();
   await expect(page.getByRole("heading", { name: "Popular Games" })).toBeVisible();
 
   await page.getByRole("button", { name: "Wallet", exact: true }).first().click();
   await expect(page).toHaveURL(/\/wallet$/);
   await expect(page.getByRole("heading", { name: "Sign in to manage your wallet" })).toBeVisible();
+});
+
+test("homepage loads additional category games without duplicates", async ({ page }) => {
+  let popularPageTwoRequests = 0;
+  const firstGame = {
+    id: "popular-first",
+    name: "Popular First",
+    provider: "PGSoft",
+    providerCode: "PG",
+    gameType: "Slot",
+    category: "Slots",
+    isPopular: true,
+    thumbnail: "/src/assets/g-aviator.jpg",
+    status: 0,
+  };
+  const secondGame = { ...firstGame, id: "popular-second", name: "Popular Second" };
+  await page.route("**/api/games?*", (route) => {
+    const url = new URL(route.request().url());
+    const category = url.searchParams.get("category") || "";
+    const requestedPage = Number(url.searchParams.get("page") || "1");
+    if (category === "Popular" && requestedPage === 2) popularPageTwoRequests += 1;
+    const selectedGames = category === "Popular"
+      ? requestedPage === 1 ? [firstGame] : [firstGame, secondGame]
+      : [];
+    return route.fulfill({ json: {
+      games: selectedGames,
+      page: requestedPage,
+      pageSize: 1,
+      total: category === "Popular" ? 2 : 0,
+      pageCount: category === "Popular" ? 2 : 0,
+      hasMore: category === "Popular" && requestedPage === 1,
+      providers: [],
+      categories: [],
+    } });
+  });
+  await page.route("**/api/payment/details", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/platform/settings", (route) => route.fulfill({ json: {} }));
+
+  await page.goto("/");
+  const popularCards = page.locator("#home-games-popular .home-game-card");
+  const popularSentinel = page.locator('.home-section-load-sentinel[data-game-category="Popular"]');
+  await expect.poll(async () => popularPageTwoRequests > 0 || await popularSentinel.count() > 0).toBe(true);
+  if (popularPageTwoRequests === 0) await popularSentinel.scrollIntoViewIfNeeded();
+  await expect.poll(() => popularPageTwoRequests).toBe(1);
+  await expect(popularCards).toHaveCount(2);
+  await expect(popularCards).toContainText(["Popular First", "Popular Second"]);
+});
+
+test("games lobby filters enabled games by provider, search, hot, and favorites tabs", async ({ page }) => {
+  const games = [
+    {
+      id: "pg-slot", name: "PG Slot One", provider: "PGSoft", providerCode: "PG",
+      gameType: "Slot", category: "Slots", isPopular: true, thumbnail: "/src/assets/g-slot.jpg", status: 0,
+    },
+    {
+      id: "spribe-mini", name: "Spribe Mini One", provider: "Spribe", providerCode: "SPRIBE",
+      gameType: "Mini Game", category: "Mini Games", isPopular: false, thumbnail: "/src/assets/g-chicken.jpg", status: 0,
+    },
+  ];
+  await page.route("**/api/games?*", (route) => {
+    const url = new URL(route.request().url());
+    const category = url.searchParams.get("category") || "";
+    const provider = url.searchParams.get("provider") || "";
+    const search = (url.searchParams.get("search") || "").toLowerCase();
+    const matches = games.filter((game) =>
+      (!provider || game.providerCode === provider)
+      && (!category || (category === "Popular" ? game.isPopular : game.category === category))
+      && (!search || game.name.toLowerCase().includes(search)),
+    );
+    return route.fulfill({ json: {
+      games: matches,
+      page: 1,
+      pageSize: 12,
+      total: matches.length,
+      pageCount: matches.length ? 1 : 0,
+      hasMore: false,
+      providers: [{ code: "PG", name: "PGSoft" }, { code: "SPRIBE", name: "Spribe" }],
+      categories: ["Mini Games", "Slots"],
+    } });
+  });
+  await page.route("**/api/payment/details", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/platform/settings", (route) => route.fulfill({ json: {} }));
+
+  await page.goto("/games");
+  await expect(page.locator(".page-games")).toHaveCSS("background-color", "rgb(245, 248, 245)");
+  await expect(page.locator(".game-lobby-search")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(page.locator(".game-lobby-layout")).toHaveCSS("display", "grid");
+  await expect(page.getByRole("tab", { name: "All" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("button", { name: "Show Spribe games" })).toBeVisible();
+  await page.getByRole("button", { name: "Show Spribe games" }).click();
+  const miniSection = page.locator(".page-games .game-category-section", { has: page.getByRole("heading", { name: "Mini Games" }) });
+  await expect(miniSection.locator(".lobby-game-card")).toHaveCount(1);
+  await expect(miniSection.locator(".lobby-game-card")).toContainText("Spribe Mini One");
+  await miniSection.getByRole("button", { name: "Add favorite" }).click();
+  await page.getByRole("tab", { name: "Favorites" }).click();
+  await expect(page.locator(".game-lobby-results .lobby-game-card")).toHaveCount(1);
+  await expect(page.locator(".game-lobby-results .lobby-game-card")).toContainText("Spribe Mini One");
+  await page.getByRole("searchbox", { name: "Search games" }).fill("missing game");
+  await expect(page.getByText("No games match your filters.")).toBeVisible();
+  await expect(page.locator(".game-lobby-results .lobby-game-card")).toHaveCount(0);
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(page.locator(".game-lobby-results .lobby-game-card")).toHaveCount(1);
+  await page.getByRole("tab", { name: "Hot" }).click();
+  await expect(page.getByRole("heading", { name: "Popular Games" })).toBeVisible();
+  await expect(page.locator(".game-lobby-results .lobby-game-card")).toHaveCount(0);
+  await page.getByRole("button", { name: "Show all providers" }).click();
+  await page.getByRole("tab", { name: "Recent" }).click();
+  await expect(page.getByText("Games you play will appear here.")).toBeVisible();
 });
 
 test("games list loads unique games in server-configured pages while scrolling", async ({ page }) => {
