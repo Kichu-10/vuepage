@@ -789,12 +789,17 @@ type Game = {
   isPopular?: boolean;
   thumbnail?: string;
 };
+type GameProvider = { code: string; name: string };
+type GameLobbyTab = "all" | "hot" | "recent" | "favorites";
 type GameSection = {
   category: string;
   title: string;
   games: Game[];
   loading: boolean;
   error: string;
+  page: number;
+  pageCount: number;
+  total: number;
 };
 
 const gameSort = ref<"popular" | "name" | "provider">("popular");
@@ -814,16 +819,47 @@ const baseCategoryItems = [
   { label: "InOut" as const, image: inOutCategory },
 ];
 const gameCategories = baseCategoryItems;
+const homeCategoryItems = [
+  { label: "Popular", image: popularCategory, section: "Popular" },
+  { label: "PG Slot", image: pgSlotCategory, section: "Slots" },
+  { label: "Spribe", image: spribeCategory, section: "Mini Games" },
+  { label: "Fishing", image: fishingCategory, section: "Fishing" },
+  { label: "InOut", image: inOutCategory, section: "Mini Games" },
+];
+const homeSectionIcons: Record<string, typeof Flame> = {
+  Popular: Flame,
+  "Mini Games": Gamepad2,
+  Slots: Spade,
+  Fishing: Fish,
+};
 const selectedCategory = ref<string>("Popular");
 const categories = computed(() => gameCategories.map((category) => category.label));
 const games = ref<Game[]>([]);
+const gameProviders = ref<GameProvider[]>([]);
+const knownGames = ref<Game[]>([]);
+const recentGames = ref<Game[]>([]);
+const gameLobbyTab = ref<GameLobbyTab>("all");
+const gameLobbyTabs: Array<{ id: GameLobbyTab; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "hot", label: "Hot" },
+  { id: "recent", label: "Recent" },
+  { id: "favorites", label: "Favorites" },
+];
+const gameLobbySearchInput = ref<HTMLInputElement | null>(null);
 const gameSections = ref<GameSection[]>([
-  { category: "Popular", title: "Popular Games", games: [], loading: false, error: "" },
-  { category: "Mini Games", title: "Mini Games", games: [], loading: false, error: "" },
-  { category: "Slots", title: "Slot Games", games: [], loading: false, error: "" },
-  { category: "Fishing", title: "Fishing Games", games: [], loading: false, error: "" },
+  { category: "Popular", title: "Popular Games", games: [], loading: false, error: "", page: 0, pageCount: 0, total: 0 },
+  { category: "Mini Games", title: "Mini Games", games: [], loading: false, error: "", page: 0, pageCount: 0, total: 0 },
+  { category: "Slots", title: "Slot Games", games: [], loading: false, error: "", page: 0, pageCount: 0, total: 0 },
+  { category: "Fishing", title: "Fishing Games", games: [], loading: false, error: "", page: 0, pageCount: 0, total: 0 },
 ]);
 const gameSectionsLoading = ref(false);
+const homeSelectedCategory = ref("Popular");
+const homeCategoryList = ref<HTMLElement | null>(null);
+const homeGameStrips = new Map<string, HTMLElement>();
+const homeSectionSentinels = new Map<string, Element>();
+let homeSectionObserver: IntersectionObserver | undefined;
+const showBackToTop = ref(false);
+const gameSectionRequestIds = new Map<string, number>();
 const showAllGames = ref(false);
 const gamesLoading = ref(true);
 const gamesError = ref("");
