@@ -100,6 +100,7 @@
 
     <section v-if="tab === 'transactions'" class="panel">
       <div class="panel-heading"><div><h2>Transactions</h2><p>Deposits and withdrawal requests</p></div><button class="export-button" @click="exportTransactions">Export CSV</button></div>
+      <p class="empty" role="note">Manual settlement: verify deposit funds have arrived before approving. Send a withdrawal to the verified destination before approving it; approval updates the internal wallet only.</p>
       <div class="toolbar transaction-toolbar">
         <input v-model="transactionSearch" type="search" placeholder="Search user or reference" aria-label="Search transactions" />
         <select v-model="transactionStatusFilter">
