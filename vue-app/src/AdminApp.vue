@@ -107,8 +107,12 @@
             <option value="">Choose provider game</option>
             <option v-for="game in providerCatalogGames" :key="game.id" :value="game.id">{{ game.name }} ({{ game.id }})</option>
           </select>
-          <input v-model="importCategory" maxlength="80" placeholder="Category (optional)" aria-label="Game category" />
+          <select v-model="importCategory" aria-label="Category for imported game">
+            <option v-for="category in gameCategories" :key="category" :value="category">{{ category }}</option>
+          </select>
+          <label class="game-popular-control"><input v-model="importIsPopular" type="checkbox" /> Popular</label>
           <input v-model="importThumbnail" maxlength="500" placeholder="Thumbnail HTTPS URL (optional)" aria-label="Game thumbnail URL" />
+          <input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Upload game thumbnail" @change="setImportThumbnailFile" />
           <input v-model.number="importSortOrder" type="number" placeholder="Display order" aria-label="Display order" />
           <button type="button" :disabled="!importProviderCode || !importGameId" @click="importGame">Add Game</button>
         </div>
@@ -130,18 +134,31 @@
           </select>
           <select v-model="managedCategoryFilter" aria-label="Filter by category">
             <option value="">All categories</option>
-            <option v-for="category in managedCategories" :key="category" :value="category">{{ category }}</option>
+            <option v-for="category in gameCategories" :key="category" :value="category">{{ category }}</option>
           </select>
         </div>
         <p v-if="gameManagementMessage" class="form-message" role="status">{{ gameManagementMessage }}</p>
         <div class="game-management-table-wrap">
           <table class="game-management-table">
-            <thead><tr><th>Game</th><th>Provider</th><th>Category</th><th>Display order</th><th>Listing</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Game</th><th>Provider</th><th>Category</th><th>Popular</th><th>Display order</th><th>Listing</th><th>Actions</th></tr></thead>
             <tbody>
               <tr v-for="game in filteredManagedGames" :key="game.id">
-                <td><input v-model="game.name" maxlength="160" :aria-label="`${game.name} name`" /><input v-model="game.thumbnail" maxlength="500" placeholder="Thumbnail URL" :aria-label="`${game.name} thumbnail`" /></td>
-                <td>{{ game.provider }}<small>{{ game.providerCode }}</small></td>
-                <td><input v-model="game.category" maxlength="80" aria-label="Game category" /></td>
+                <td>
+                  <input v-model="game.name" maxlength="160" :aria-label="`${game.name} name`" />
+                  <input v-model="game.thumbnail" maxlength="500" placeholder="Thumbnail URL" :aria-label="`${game.name} thumbnail`" />
+                  <input type="file" accept="image/jpeg,image/png,image/webp" :aria-label="`Upload ${game.name} thumbnail`" @change="uploadManagedThumbnail(game, $event)" />
+                </td>
+                <td>
+                  <select v-model="game.providerCode" :aria-label="`${game.name} provider`">
+                    <option v-for="provider in managedProviders" :key="provider.code" :value="provider.code">{{ provider.name }}</option>
+                  </select>
+                </td>
+                <td>
+                  <select v-model="game.category" :aria-label="`${game.name} category`">
+                    <option v-for="category in gameCategories" :key="category" :value="category">{{ category }}</option>
+                  </select>
+                </td>
+                <td><label class="game-enabled-control"><input v-model="game.isPopular" type="checkbox" :aria-label="`Mark ${game.name} as popular`" /> Popular</label></td>
                 <td><input v-model.number="game.sortOrder" type="number" aria-label="Game display order" /></td>
                 <td><label class="game-enabled-control"><input v-model="game.enabled" type="checkbox" :disabled="game.providerStatus !== 0" /> {{ game.enabled ? "Enabled" : "Disabled" }}</label></td>
                 <td class="game-actions"><button type="button" class="secondary" @click="saveManagedGame(game)">Save</button><button type="button" class="reject" @click="removeManagedGame(game)">Remove</button></td>
@@ -342,7 +359,7 @@ type Promotion = { id: string; title: string; description: string; reward: strin
 type ManagedProvider = { code: string; name: string; enabled: boolean; gameCount: number };
 type ManagedGame = {
   id: string; providerCode: string; provider: string; providerEnabled: boolean; externalId: string; name: string;
-  thumbnail: string; category: string; gameType: string; sortOrder: number; enabled: boolean; providerStatus: number;
+  thumbnail: string; category: string; isPopular: boolean; gameType: string; sortOrder: number; enabled: boolean; providerStatus: number;
 };
 type ProviderSource = { code: string; name: string };
 type ProviderCatalogGame = { id: string; name: string; gameType: string; status: number };
@@ -376,6 +393,7 @@ const lastRefreshTime = ref("just now");
 const supportTickets = ref<SupportTicket[]>([]);
 const managedProviders = ref<ManagedProvider[]>([]);
 const managedGames = ref<ManagedGame[]>([]);
+const gameCategories = ["Mini Games", "Slots", "Fishing"];
 const gameStats = ref({ totalProviders: 0, totalGames: 0, availableGames: 0, activeGames: 0, disabledGames: 0 });
 const catalogPageSize = ref(24);
 const providerApiConfigured = ref(false);
@@ -387,8 +405,10 @@ const importProviderCode = ref("");
 const providerCatalogGames = ref<ProviderCatalogGame[]>([]);
 const providerGamesLoading = ref(false);
 const importGameId = ref("");
-const importCategory = ref("");
+const importCategory = ref("Mini Games");
+const importIsPopular = ref(false);
 const importThumbnail = ref("");
+const importThumbnailFile = ref<File | null>(null);
 const importSortOrder = ref(0);
 const managedGameSearch = ref("");
 const managedProviderFilter = ref("");
@@ -403,7 +423,6 @@ const filteredManagedGames = computed(() => managedGames.value.filter((game) => 
     && (!managedProviderFilter.value || game.providerCode === managedProviderFilter.value)
     && (!managedCategoryFilter.value || game.category === managedCategoryFilter.value);
 }));
-const managedCategories = computed(() => [...new Set(managedGames.value.map((game) => game.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
 const openTicketCount = computed(() => supportTickets.value.filter((ticket) => ticket.status !== "resolved").length);
 const platformSettings = ref({ announcement: "", maintenanceMode: false, supportEmail: "", supportPhone: "", supportHours: "24/7", promotions: [] as Promotion[] });
 const settingsMessage = ref("");
@@ -606,24 +625,41 @@ async function loadProviderGames() {
 }
 
 async function importGame() {
+  let importedGameId = "";
   try {
-    await api("/api/admin/game-management/games", {
+    const data = await api("/api/admin/game-management/games", {
       method: "POST",
       body: JSON.stringify({
         providerCode: importProviderCode.value,
         externalId: importGameId.value,
         category: importCategory.value,
+        isPopular: importIsPopular.value,
         thumbnail: importThumbnail.value,
         sortOrder: Number(importSortOrder.value),
       }),
     });
+    importedGameId = data.game.id;
+    if (importThumbnailFile.value) {
+      try {
+        await uploadGameThumbnail(importedGameId, importThumbnailFile.value);
+      } catch (caught) {
+        await loadGameManagement();
+        gameManagementMessage.value = `Game added, but its thumbnail upload failed: ${caught instanceof Error ? caught.message : "upload error"}. You can upload it from the game row.`;
+        importGameId.value = "";
+        importThumbnailFile.value = null;
+        return;
+      }
+    }
     importGameId.value = "";
-    importCategory.value = "";
+    importCategory.value = "Mini Games";
+    importIsPopular.value = false;
     importThumbnail.value = "";
+    importThumbnailFile.value = null;
     importSortOrder.value = 0;
     await loadGameManagement();
     gameManagementMessage.value = "Game added disabled. Enable it in the table when ready to publish.";
   } catch (caught) {
+    if (importedGameId) await loadGameManagement();
     gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not add game";
   }
 }
@@ -633,9 +669,11 @@ async function saveManagedGame(game: ManagedGame) {
     await api(`/api/admin/game-management/games/${encodeURIComponent(game.id)}`, {
       method: "PATCH",
       body: JSON.stringify({
+        providerCode: game.providerCode,
         name: game.name,
         thumbnail: game.thumbnail,
         category: game.category,
+        isPopular: game.isPopular,
         sortOrder: Number(game.sortOrder),
         enabled: game.enabled,
       }),
@@ -644,6 +682,40 @@ async function saveManagedGame(game: ManagedGame) {
     gameManagementMessage.value = "Game settings saved.";
   } catch (caught) {
     gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not save game";
+  }
+}
+
+function setImportThumbnailFile(event: Event) {
+  importThumbnailFile.value = (event.target as HTMLInputElement).files?.[0] || null;
+}
+
+async function uploadGameThumbnail(gameId: string, file: File) {
+  const form = new FormData();
+  form.append("thumbnail", file);
+  const headers = new Headers();
+  if (token.value) headers.set("Authorization", `Bearer ${token.value}`);
+  const response = await fetch(`/api/admin/game-management/games/${encodeURIComponent(gameId)}/thumbnail`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Could not upload game thumbnail");
+  return data.game as ManagedGame;
+}
+
+async function uploadManagedThumbnail(game: ManagedGame, event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    await uploadGameThumbnail(game.id, file);
+    await loadGameManagement();
+    gameManagementMessage.value = `Thumbnail updated for ${game.name}.`;
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not upload game thumbnail";
+  } finally {
+    input.value = "";
   }
 }
 
@@ -1070,6 +1142,10 @@ body { margin: 0; }
 .game-management-block { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid #e8eeea; }
 .game-provider-add { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 0; }
 .game-provider-add input, .game-provider-add select, .game-management-filters input, .game-management-filters select { min-width: 0; height: 40px; padding: 0 10px; border: 1px solid #e1e8e4; border-radius: 8px; background: #fff; font: inherit; }
+.game-provider-add input[type="file"], .game-management-table input[type="file"] { height: auto; min-height: 36px; padding: 6px; font-size: 10px; }
+.game-management-table select { width: 100%; min-width: 100px; height: 36px; padding: 0 7px; border: 1px solid #e1e8e4; border-radius: 7px; background: #fff; font: inherit; font-size: 11px; }
+.game-popular-control { display: inline-flex; align-items: center; gap: 5px; color: #5a685f; font-size: 11px; white-space: nowrap; }
+.game-popular-control input { width: 16px; height: 16px; }
 .game-provider-add button { min-height: 40px; padding: 0 14px; border: 0; border-radius: 8px; color: #fff; background: #087b4b; font-size: 11px; font-weight: 750; }
 .game-provider-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(140px, 2fr) auto auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid #edf1ef; border-radius: 10px; }
 .game-provider-row > div { display: grid; gap: 3px; }
