@@ -1418,7 +1418,9 @@ async function displayNextGamesBatch(): Promise<void> {
     if (requestId !== gamesRequestId) return;
     const seen = new Set(games.value.map((game) => game.id));
     const nextGames = Array.isArray(data.games) ? data.games as Game[] : [];
-    games.value = [...games.value, ...nextGames.filter((game) => !seen.has(game.id))];
+    const uniqueNextGames = nextGames.filter((game) => !seen.has(game.id));
+    games.value = [...games.value, ...uniqueNextGames];
+    rememberGames(uniqueNextGames);
     gameCatalogPage.value = Number.isInteger(data.page) ? data.page : nextPage;
     gameCatalogPageCount.value = Number.isInteger(data.pageCount) ? data.pageCount : gameCatalogPage.value;
     gameCatalogTotal.value = Number.isFinite(data.total) ? data.total : games.value.length;
@@ -1444,7 +1446,6 @@ async function loadPromotions(): Promise<void> {
 }
 async function navigateTo(path: string): Promise<void> {
   modal.value = null;
-  if (path !== "/games") searchOpen.value = false;
   if (path !== "/games" && activeGame.value) await closeGame();
   await router.push(path);
   window.scrollTo({ top: 0, behavior: "smooth" });
