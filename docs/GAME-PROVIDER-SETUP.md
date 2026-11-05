@@ -20,6 +20,8 @@ HUIDU supplies the provider/game catalog (`GET /game/providers`, `GET /game/list
 
 The backend caches a successful catalog on disk for six hours, serves that cache while refreshing it, and spaces provider-list requests by five seconds. A `10030` rate-limit response starts a persisted one-hour cooldown to prevent repeated requests from page reloads or API restarts. Keep `vue-app/server/cache/` on persistent writable storage. These defaults reduce request bursts but cannot override the agency limits enforced by HUIDU.
 
+The customer app attempts to display the returned `game_launch_url` in an iframe. HUIDU's public integration documentation describes navigating the player to that URL, but does not confirm iframe support. The public homepage's headers and an invalid sample launch URL do not establish the frame policy of a live game session. If embedding is blocked or the game appears blank, use **Open with HUIDU** to follow the documented direct-launch flow. Do not proxy the game or bypass CSP or `X-Frame-Options`. Verifying a real session requires an authorized test account; launching through the transfer-wallet API may move available funds.
+
 **Current status:** The latest local catalog check returned HUIDU error `10030` (“Too many requests”). The catalog and game launches are not currently verified live. Tests use mocked provider responses; do not treat them as live verification or test with real balances until HUIDU confirms access.
 
 Check local secret-file exclusion with:

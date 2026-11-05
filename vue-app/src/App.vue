@@ -99,7 +99,44 @@
 
       </template>
 
-      <template v-if="currentPage === 'games'">
+      <section v-if="currentPage === 'games' && activeGame" class="game-player">
+        <div class="game-player-heading">
+          <button type="button" class="game-back-button" @click="closeGame">
+            <ChevronLeft :size="18" />
+            Back to Games
+          </button>
+          <div>
+            <span class="eyebrow">{{ activeGame.provider }}</span>
+            <h1>{{ activeGame.name }}</h1>
+          </div>
+        </div>
+        <div class="game-player-frame">
+          <iframe
+            v-if="activeGameUrl"
+            :src="activeGameUrl"
+            :title="`${activeGame.name} game`"
+            allow="autoplay; fullscreen; gamepad"
+            allowfullscreen
+            @load="handleGameFrameLoad"
+            @error="handleGameFrameError"
+          />
+          <div v-if="gameFrameLoading" class="game-frame-status" role="status">
+            <span class="loading-spinner" aria-hidden="true"></span>
+            <span>Loading {{ activeGame.name }}…</span>
+          </div>
+          <div v-if="gameFrameError" class="game-frame-error" role="alert">
+            <strong>Could not load the game here</strong>
+            <p>{{ gameFrameError }}</p>
+            <button type="button" class="primary-button" @click="openGameWithProvider">Open with HUIDU</button>
+          </div>
+        </div>
+        <div class="game-player-help">
+          <p>If the embedded game is blank or blocked, HUIDU’s documented launch method is to open its returned game URL directly.</p>
+          <button v-if="!gameFrameError" type="button" class="game-provider-launch" @click="openGameWithProvider">Open with HUIDU</button>
+        </div>
+      </section>
+
+      <template v-if="currentPage === 'games' && !activeGame">
         <section v-if="maintenanceMode" class="maintenance-banner" role="status">
           Scheduled maintenance is active. Transactions and support may experience delays.
         </section>
@@ -159,7 +196,7 @@
         </div>
       </template>
 
-      <section v-if="currentPage === 'home' || currentPage === 'games'" class="games-panel" :class="{ 'games-panel-full': currentPage === 'games' }">
+      <section v-if="currentPage === 'home' || (currentPage === 'games' && !activeGame)" class="games-panel" :class="{ 'games-panel-full': currentPage === 'games' }">
         <div class="section-heading">
           <h2><Flame class="section-flame" :size="27" :fill="'currentColor'" />{{ query || selectedProvider ? "Results" : selectedCategory === "Popular" ? "All games" : selectedCategory }}</h2>
           <button v-if="currentPage === 'home'" class="view-all" @click="navigateTo('/games')">
@@ -635,6 +672,11 @@ const gamesLoadSentinel = ref<HTMLElement | null>(null);
 let gamesLoadObserver: IntersectionObserver | undefined;
 let gamesLoadPromise: Promise<void> | undefined;
 const launchingGameId = ref<string | null>(null);
+const activeGame = ref<Game | null>(null);
+const activeGameUrl = ref("");
+const gameFrameLoading = ref(false);
+const gameFrameError = ref("");
+let gameFrameLoadTimer: ReturnType<typeof setTimeout> | undefined;
 const balance = ref(8891.2);
 const jackpot = ref(10799004.2);
 const favorites = ref<string[]>([]);
@@ -841,6 +883,7 @@ onMounted(async () => {
 });
 onUnmounted(() => {
   gamesLoadObserver?.disconnect();
+  clearGameFrameLoadTimer();
   if (noticeTimer) clearTimeout(noticeTimer);
   if (inboxTimer) clearInterval(inboxTimer);
   if (promotionCarouselTimer) clearInterval(promotionCarouselTimer);
@@ -1159,12 +1202,6 @@ async function play(game: Game): Promise<void> {
     return;
   }
   if (launchingGameId.value !== null) return;
-  const gameWindow = window.open("about:blank", "_blank");
-  if (!gameWindow) {
-    notify("Allow pop-ups to launch a game");
-    return;
-  }
-  gameWindow.opener = null;
   launchingGameId.value = game.id;
   try {
     const platform = window.matchMedia("(max-width: 760px)").matches ? 2 : 1;
@@ -1172,15 +1209,64 @@ async function play(game: Game): Promise<void> {
       method: "POST",
       body: JSON.stringify({ platform }),
     });
+    if (typeof data.gameUrl !== "string") throw new Error("The provider returned an invalid game URL");
+    let gameUrl: string;
+    try {
+      const parsedGameUrl = new URL(data.gameUrl);
+      if (parsedGameUrl.protocol !== "https:") throw new Error("Invalid URL protocol");
+      gameUrl = parsedGameUrl.toString();
+    } catch {
+      throw new Error("The provider returned an invalid game URL");
+    }
     balance.value = Number(data.balance);
     if (user.value) user.value.balance = balance.value;
-    gameWindow.location.replace(data.gameUrl);
+    if (route.path !== "/games") await router.push("/games");
+    activeGame.value = game;
+    activeGameUrl.value = gameUrl;
+    gameFrameLoading.value = true;
+    gameFrameError.value = "";
+    clearGameFrameLoadTimer();
+    gameFrameLoadTimer = setTimeout(() => {
+      if (gameFrameLoading.value) {
+        gameFrameLoading.value = false;
+        gameFrameError.value = "The provider did not finish loading the embedded game. Its frame policy may prevent in-site playback.";
+      }
+    }, 20_000);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (error) {
-    gameWindow.close();
     notify(error instanceof Error ? error.message : "Unable to play");
   } finally {
     launchingGameId.value = null;
   }
+}
+function clearGameFrameLoadTimer(): void {
+  if (gameFrameLoadTimer) clearTimeout(gameFrameLoadTimer);
+  gameFrameLoadTimer = undefined;
+}
+function handleGameFrameLoad(): void {
+  clearGameFrameLoadTimer();
+  gameFrameLoading.value = false;
+  gameFrameError.value = "";
+}
+function handleGameFrameError(): void {
+  clearGameFrameLoadTimer();
+  gameFrameLoading.value = false;
+  gameFrameError.value = "The browser could not load this game inside the website. HUIDU may require its documented direct-launch method.";
+}
+function openGameWithProvider(): void {
+  if (!activeGameUrl.value) {
+    notify("The provider has not returned a game URL");
+    return;
+  }
+  window.location.assign(activeGameUrl.value);
+}
+function closeGame(): void {
+  clearGameFrameLoadTimer();
+  activeGame.value = null;
+  activeGameUrl.value = "";
+  gameFrameLoading.value = false;
+  gameFrameError.value = "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 async function submitWalletRequest(): Promise<void> {
   const value = Number(amount.value);
@@ -1619,6 +1705,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .games-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 10px 4px 2px; }
 .games-heading h1 { margin: 4px 0; color: #284b35; font-size: clamp(24px, 5vw, 36px); }
 .games-heading p { margin: 0; color: #718076; font-size: 14px; }
+.game-player { display: flex; flex-direction: column; gap: 12px; }
+.game-player-heading { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.game-player-heading h1 { margin: 3px 0 0; color: #284b35; font-size: clamp(20px, 5vw, 30px); }
+.game-back-button { display: inline-flex; min-height: 40px; align-items: center; gap: 5px; padding: 7px 12px; border: 1px solid #dfe8e0; border-radius: 10px; color: #355342; background: #fff; font-weight: 700; }
+.game-player-frame { position: relative; width: 100%; height: min(68vh, 760px); min-height: 340px; overflow: hidden; border: 1px solid #dfe8e0; border-radius: 15px; background: #101914; box-shadow: 0 6px 24px rgb(22 54 31 / 12%); }
+.game-player-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #101914; }
+.game-frame-status, .game-frame-error { position: absolute; z-index: 1; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; color: #fff; background: rgb(16 25 20 / 94%); text-align: center; }
+.game-frame-status { flex-direction: row; }
+.game-frame-status .loading-spinner { width: 24px; height: 24px; flex: 0 0 auto; border-color: rgb(255 255 255 / 28%); border-top-color: #69d991; }
+.game-frame-error strong { font-size: 18px; }
+.game-frame-error p { max-width: 560px; margin: 0; color: rgb(255 255 255 / 82%); line-height: 1.5; }
+.game-frame-error .primary-button { min-height: 42px; }
+.game-player-help { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 15px; border: 1px solid #e8eee8; border-radius: 12px; background: #fff; }
+.game-player-help p { flex: 1 1 280px; margin: 0; color: #68796d; font-size: 13px; line-height: 1.5; }
+.game-provider-launch { min-height: 40px; padding: 8px 13px; border: 0; border-radius: 9px; color: #fff; background: #168446; font-size: 13px; font-weight: 700; }
 .games-total { flex: 0 0 auto; padding: 8px 12px; border-radius: 999px; color: #277647; background: #e7f4e9; font-size: 13px; font-weight: 750; }
 .games-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border: 1px solid #e8eee8; border-radius: 14px; background: #fff; }
 .games-search { display: flex; min-width: 220px; min-height: 42px; flex: 1 1 280px; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid #dfe8e0; border-radius: 10px; color: #748278; background: #f9fbf9; }
@@ -1892,6 +1993,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .page-frame { min-height: 100vh; }
 }
 @media (min-width: 760px) {
+  .game-player { gap: 16px; }
+  .game-player-heading { flex-direction: row; align-items: center; gap: 18px; }
+  .game-player-frame { height: min(76vh, 860px); min-height: 500px; border-radius: 19px; }
   body { background: radial-gradient(ellipse at top, #f8fbf8 0%, #eaf1eb 80%); }
   .page-frame {
     width: 100%;
