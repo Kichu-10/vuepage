@@ -109,6 +109,28 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_game_wallet_transfers_user ON game_wallet_transfers(user_id);
   CREATE INDEX IF NOT EXISTS idx_game_wallet_transfers_status ON game_wallet_transfers(status);
+
+  CREATE TABLE IF NOT EXISTS game_providers (
+    code TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS managed_games (
+    id TEXT PRIMARY KEY, provider_code TEXT NOT NULL, external_id TEXT NOT NULL,
+    name TEXT NOT NULL, normalized_name TEXT NOT NULL, thumbnail TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT '', game_type TEXT NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 0,
+    provider_status INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    UNIQUE(provider_code, external_id),
+    UNIQUE(normalized_name),
+    FOREIGN KEY(provider_code) REFERENCES game_providers(code)
+  );
+  CREATE INDEX IF NOT EXISTS idx_managed_games_public
+    ON managed_games(enabled, provider_code, sort_order, name);
+  CREATE TABLE IF NOT EXISTS game_catalog_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    page_size INTEGER NOT NULL DEFAULT 24
+  );
+  INSERT OR IGNORE INTO game_catalog_settings (id, page_size) VALUES (1, 24);
 `);
 const userColumns = db.prepare("PRAGMA table_info(users)").all().map((column) => column.name);
 if (!userColumns.includes("avatar_path")) {
@@ -325,6 +347,240 @@ export function toCents(amount) {
 
 export function fromCents(amount) {
   return dollars(amount);
+}
+
+function normalizedGameName(name) {
+  return String(name).normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function providerRow(row) {
+  return {
+    code: row.code,
+    name: row.name,
+    enabled: Boolean(row.enabled),
+    gameCount: Number(row.game_count || 0),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function gameRow(row) {
+  return {
+    id: row.id,
+    providerCode: row.provider_code,
+    provider: row.provider_name,
+    providerEnabled: Boolean(row.provider_enabled),
+    externalId: row.external_id,
+    name: row.name,
+    thumbnail: row.thumbnail,
+    category: row.category,
+    gameType: row.game_type,
+    sortOrder: row.sort_order,
+    enabled: Boolean(row.enabled),
+    providerStatus: row.provider_status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function listManagedProviders() {
+  return db.prepare(`
+    SELECT p.*, COUNT(g.id) AS game_count
+    FROM game_providers p LEFT JOIN managed_games g ON g.provider_code = p.code
+    GROUP BY p.code ORDER BY p.name COLLATE NOCASE
+  `).all().map(providerRow);
+}
+
+export function getManagedProvider(code) {
+  const row = db.prepare(`
+    SELECT p.*, COUNT(g.id) AS game_count
+    FROM game_providers p LEFT JOIN managed_games g ON g.provider_code = p.code
+    WHERE p.code = ? GROUP BY p.code
+  `).get(code);
+  return row ? providerRow(row) : null;
+}
+
+export function saveManagedProvider({ code, name, enabled }) {
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO game_providers (code, name, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(code) DO UPDATE SET name = excluded.name, enabled = excluded.enabled, updated_at = excluded.updated_at
+  `).run(code, name, enabled ? 1 : 0, now, now);
+  return getManagedProvider(code);
+}
+
+const managedGameSelect = `
+  SELECT g.*, p.name AS provider_name, p.enabled AS provider_enabled
+  FROM managed_games g JOIN game_providers p ON p.code = g.provider_code
+`;
+
+export function listManagedGames({ search = "", provider = "", category = "" } = {}) {
+  const clauses = [];
+  const parameters = [];
+  if (search) {
+    clauses.push("(g.name LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\')");
+    const escaped = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
+    parameters.push(escaped, escaped);
+  }
+  if (provider) {
+    clauses.push("(g.provider_code = ? OR p.name = ?)");
+    parameters.push(provider, provider);
+  }
+  if (category) {
+    clauses.push("g.category = ?");
+    parameters.push(category);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  return db.prepare(`${managedGameSelect} ${where} ORDER BY g.sort_order, g.name COLLATE NOCASE`)
+    .all(...parameters).map(gameRow);
+}
+
+export function getManagedGame(id) {
+  const row = db.prepare(`${managedGameSelect} WHERE g.id = ?`).get(id);
+  return row ? gameRow(row) : null;
+}
+
+export function getPublicManagedGame(id) {
+  const row = db.prepare(`
+    ${managedGameSelect}
+    WHERE g.id = ? AND g.enabled = 1 AND p.enabled = 1
+  `).get(id);
+  return row ? gameRow(row) : null;
+}
+
+export function addManagedGame({ providerCode, externalId, name, thumbnail = "", category = "", gameType = "", sortOrder = 0, enabled = false, providerStatus = 0 }) {
+  const now = new Date().toISOString();
+  const id = externalId;
+  db.prepare(`
+    INSERT INTO managed_games (
+      id, provider_code, external_id, name, normalized_name, thumbnail, category,
+      game_type, sort_order, enabled, provider_status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, providerCode, externalId, name, normalizedGameName(name), thumbnail, category,
+    gameType, sortOrder, enabled ? 1 : 0, providerStatus, now, now,
+  );
+  return getManagedGame(id);
+}
+
+export function updateManagedGame(id, updates) {
+  const current = getManagedGame(id);
+  if (!current) return null;
+  const fields = {
+    name: updates.name ?? current.name,
+    thumbnail: updates.thumbnail ?? current.thumbnail,
+    category: updates.category ?? current.category,
+    sort_order: updates.sortOrder ?? current.sortOrder,
+    enabled: updates.enabled === undefined ? Number(current.enabled) : updates.enabled ? 1 : 0,
+  };
+  db.prepare(`
+    UPDATE managed_games
+    SET name = ?, normalized_name = ?, thumbnail = ?, category = ?, sort_order = ?, enabled = ?, updated_at = ?
+    WHERE id = ?
+  `).run(
+    fields.name, normalizedGameName(fields.name), fields.thumbnail, fields.category,
+    fields.sort_order, fields.enabled, new Date().toISOString(), id,
+  );
+  return getManagedGame(id);
+}
+
+export function updateManagedGameEnabled(id, enabled) {
+  return updateManagedGame(id, { enabled });
+}
+
+export function getGameCatalogPageSize() {
+  return db.prepare("SELECT page_size FROM game_catalog_settings WHERE id = 1").get().page_size;
+}
+
+export function setGameCatalogPageSize(pageSize) {
+  db.prepare("UPDATE game_catalog_settings SET page_size = ? WHERE id = 1").run(pageSize);
+  return pageSize;
+}
+
+export function getGameManagementStats() {
+  const providers = db.prepare("SELECT COUNT(*) AS count FROM game_providers").get().count;
+  const totalGames = db.prepare("SELECT COUNT(*) AS count FROM managed_games").get().count;
+  const availableGames = db.prepare("SELECT COUNT(*) AS count FROM managed_games WHERE provider_status = 0").get().count;
+  const activeGames = db.prepare(`
+    SELECT COUNT(*) AS count FROM managed_games g
+    JOIN game_providers p ON p.code = g.provider_code
+    WHERE g.enabled = 1 AND p.enabled = 1 AND g.provider_status = 0
+  `).get().count;
+  return {
+    totalProviders: providers,
+    totalGames,
+    availableGames,
+    activeGames,
+    disabledGames: totalGames - activeGames,
+  };
+}
+
+export function getPublicGameCatalog({ page = 1, search = "", provider = "", category = "", sort = "popular" } = {}) {
+  const clauses = ["g.enabled = 1", "p.enabled = 1"];
+  const parameters = [];
+  if (search) {
+    clauses.push("(g.name LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\' OR g.category LIKE ? ESCAPE '\\')");
+    const escaped = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
+    parameters.push(escaped, escaped, escaped);
+  }
+  if (provider) {
+    clauses.push("(g.provider_code = ? OR p.name = ?)");
+    parameters.push(provider, provider);
+  }
+  if (category === "PG Slot") {
+    clauses.push("(lower(g.category) LIKE '%slot%' OR lower(g.game_type) LIKE '%slot%' OR lower(p.name) LIKE '%pg%' OR lower(p.name) LIKE '%jili%' OR lower(p.name) LIKE '%pragmatic%')");
+  } else if (category === "Spribe") {
+    clauses.push("(lower(g.category) LIKE '%spribe%' OR lower(p.name) LIKE '%spribe%')");
+  } else if (category === "Fishing") {
+    clauses.push("(lower(g.category) LIKE '%fish%' OR lower(g.game_type) LIKE '%fish%' OR lower(p.name) LIKE '%fish%')");
+  } else if (category === "InOut") {
+    clauses.push("(lower(g.category) LIKE '%inout%' OR lower(g.game_type) LIKE '%inout%' OR lower(p.name) LIKE '%inout%')");
+  } else if (category && category !== "Popular") {
+    clauses.push("(g.category = ? OR p.name = ?)");
+    parameters.push(category, category);
+  }
+  const where = clauses.join(" AND ");
+  const total = db.prepare(`
+    SELECT COUNT(*) AS count FROM managed_games g
+    JOIN game_providers p ON p.code = g.provider_code
+    WHERE ${where}
+  `).get(...parameters).count;
+  const pageSize = getGameCatalogPageSize();
+  const pageCount = Math.ceil(total / pageSize);
+  const currentPage = Math.min(Math.max(1, page), Math.max(1, pageCount));
+  const order = sort === "name"
+    ? "g.name COLLATE NOCASE, g.sort_order"
+    : sort === "provider"
+      ? "p.name COLLATE NOCASE, g.sort_order, g.name COLLATE NOCASE"
+      : "g.sort_order, g.name COLLATE NOCASE";
+  const games = db.prepare(`
+    ${managedGameSelect}
+    WHERE ${where}
+    ORDER BY ${order}
+    LIMIT ? OFFSET ?
+  `).all(...parameters, pageSize, (currentPage - 1) * pageSize).map((game) => ({
+    id: game.id,
+    name: game.name,
+    provider: game.provider_name,
+    providerCode: game.provider_code,
+    gameType: game.game_type,
+    category: game.category,
+    thumbnail: game.thumbnail,
+    status: game.provider_status,
+  }));
+  const providers = db.prepare(`
+    SELECT DISTINCT p.code, p.name FROM game_providers p
+    JOIN managed_games g ON g.provider_code = p.code
+    WHERE p.enabled = 1 AND g.enabled = 1 ORDER BY p.name COLLATE NOCASE
+  `).all().map((row) => ({ code: row.code, name: row.name }));
+  const categories = db.prepare(`
+    SELECT DISTINCT category FROM managed_games g
+    JOIN game_providers p ON p.code = g.provider_code
+    WHERE g.enabled = 1 AND p.enabled = 1 AND category != ''
+    ORDER BY category COLLATE NOCASE
+  `).all().map((row) => row.category);
+  return { games, page: currentPage, pageSize, total, pageCount, hasMore: currentPage < pageCount, providers, categories };
 }
 
 export function reservedWithdrawalCents(userId) {
