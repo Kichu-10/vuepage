@@ -10,6 +10,7 @@ const sqliteFile = process.env.SQLITE_PATH || path.join(directory, "database.sql
 const legacyJsonFile = path.join(directory, "database.json");
 fs.mkdirSync(path.dirname(sqliteFile), { recursive: true });
 
+export const GAME_CATEGORIES = ["Mini Games", "Slots", "Fishing"];
 export const db = new DatabaseSync(sqliteFile);
 db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
 const previousUserColumns = db.prepare("PRAGMA table_info(users)").all().map((column) => column.name);
@@ -119,7 +120,8 @@ db.exec(`
     name TEXT NOT NULL, normalized_name TEXT NOT NULL, thumbnail TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL DEFAULT '', game_type TEXT NOT NULL DEFAULT '',
     sort_order INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 0,
-    provider_status INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    is_popular INTEGER NOT NULL DEFAULT 0, provider_status INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
     UNIQUE(provider_code, external_id),
     UNIQUE(normalized_name),
     FOREIGN KEY(provider_code) REFERENCES game_providers(code)
@@ -131,6 +133,11 @@ db.exec(`
     page_size INTEGER NOT NULL DEFAULT 24
   );
   INSERT OR IGNORE INTO game_catalog_settings (id, page_size) VALUES (1, 24);
+  CREATE TABLE IF NOT EXISTS game_categories (
+    name TEXT PRIMARY KEY, sort_order INTEGER NOT NULL UNIQUE
+  );
+  INSERT OR IGNORE INTO game_categories (name, sort_order) VALUES
+    ('Popular', 0), ('Mini Games', 1), ('Slots', 2), ('Fishing', 3);
 `);
 const userColumns = db.prepare("PRAGMA table_info(users)").all().map((column) => column.name);
 if (!userColumns.includes("avatar_path")) {
@@ -147,6 +154,20 @@ const gamePlayerColumns = db.prepare("PRAGMA table_info(game_players)").all().ma
 if (!gamePlayerColumns.includes("provider_created")) {
   db.exec("ALTER TABLE game_players ADD COLUMN provider_created INTEGER NOT NULL DEFAULT 0;");
 }
+const managedGameColumns = db.prepare("PRAGMA table_info(managed_games)").all().map((column) => column.name);
+if (!managedGameColumns.includes("is_popular")) {
+  db.exec("ALTER TABLE managed_games ADD COLUMN is_popular INTEGER NOT NULL DEFAULT 0;");
+}
+db.exec(`
+  UPDATE managed_games
+  SET category = CASE
+    WHEN lower(category) LIKE '%fish%' OR lower(game_type) LIKE '%fish%' THEN 'Fishing'
+    WHEN lower(category) LIKE '%slot%' OR lower(game_type) LIKE '%slot%' THEN 'Slots'
+    WHEN lower(category) LIKE '%mini%' OR lower(game_type) LIKE '%mini%' THEN 'Mini Games'
+    ELSE 'Mini Games'
+  END
+  WHERE category NOT IN ('Mini Games', 'Slots', 'Fishing');
+`);
 
 function cents(value) {
   const amount = Number(value);
@@ -353,6 +374,15 @@ function normalizedGameName(name) {
   return String(name).normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
+function canonicalGameCategory(category, gameType = "") {
+  if (GAME_CATEGORIES.includes(category)) return category;
+  const value = String(category || gameType || "").toLowerCase();
+  if (value.includes("fish")) return "Fishing";
+  if (value.includes("slot")) return "Slots";
+  if (value.includes("mini")) return "Mini Games";
+  return "Mini Games";
+}
+
 function providerRow(row) {
   return {
     code: row.code,
@@ -374,6 +404,7 @@ function gameRow(row) {
     name: row.name,
     thumbnail: row.thumbnail,
     category: row.category,
+    isPopular: Boolean(row.is_popular),
     gameType: row.game_type,
     sortOrder: row.sort_order,
     enabled: Boolean(row.enabled),
@@ -449,17 +480,17 @@ export function getPublicManagedGame(id) {
   return row ? gameRow(row) : null;
 }
 
-export function addManagedGame({ providerCode, externalId, name, thumbnail = "", category = "", gameType = "", sortOrder = 0, enabled = false, providerStatus = 0 }) {
+export function addManagedGame({ providerCode, externalId, name, thumbnail = "", category = "Mini Games", gameType = "", sortOrder = 0, isPopular = false, enabled = false, providerStatus = 0 }) {
   const now = new Date().toISOString();
   const id = externalId;
   db.prepare(`
     INSERT INTO managed_games (
       id, provider_code, external_id, name, normalized_name, thumbnail, category,
-      game_type, sort_order, enabled, provider_status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      game_type, sort_order, enabled, is_popular, provider_status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    id, providerCode, externalId, name, normalizedGameName(name), thumbnail, category,
-    gameType, sortOrder, enabled ? 1 : 0, providerStatus, now, now,
+    id, providerCode, externalId, name, normalizedGameName(name), thumbnail, canonicalGameCategory(category, gameType),
+    gameType, sortOrder, enabled ? 1 : 0, isPopular ? 1 : 0, providerStatus, now, now,
   );
   return getManagedGame(id);
 }
@@ -470,17 +501,23 @@ export function updateManagedGame(id, updates) {
   const fields = {
     name: updates.name ?? current.name,
     thumbnail: updates.thumbnail ?? current.thumbnail,
-    category: updates.category ?? current.category,
+    provider_code: updates.providerCode ?? current.providerCode,
+    game_type: updates.gameType ?? current.gameType,
+    provider_status: updates.providerStatus ?? current.providerStatus,
+    category: canonicalGameCategory(updates.category ?? current.category, current.gameType),
     sort_order: updates.sortOrder ?? current.sortOrder,
+    is_popular: updates.isPopular === undefined ? Number(current.isPopular) : updates.isPopular ? 1 : 0,
     enabled: updates.enabled === undefined ? Number(current.enabled) : updates.enabled ? 1 : 0,
   };
   db.prepare(`
     UPDATE managed_games
-    SET name = ?, normalized_name = ?, thumbnail = ?, category = ?, sort_order = ?, enabled = ?, updated_at = ?
+    SET provider_code = ?, name = ?, normalized_name = ?, thumbnail = ?, category = ?,
+      game_type = ?, provider_status = ?, sort_order = ?, enabled = ?, is_popular = ?, updated_at = ?
     WHERE id = ?
   `).run(
-    fields.name, normalizedGameName(fields.name), fields.thumbnail, fields.category,
-    fields.sort_order, fields.enabled, new Date().toISOString(), id,
+    fields.provider_code, fields.name, normalizedGameName(fields.name), fields.thumbnail, fields.category,
+    fields.game_type, fields.provider_status, fields.sort_order, fields.enabled, fields.is_popular,
+    new Date().toISOString(), id,
   );
   return getManagedGame(id);
 }
@@ -491,6 +528,10 @@ export function updateManagedGameEnabled(id, enabled) {
 
 export function getGameCatalogPageSize() {
   return db.prepare("SELECT page_size FROM game_catalog_settings WHERE id = 1").get().page_size;
+}
+
+export function listGameCategories() {
+  return db.prepare("SELECT name FROM game_categories ORDER BY sort_order").all().map((row) => row.name);
 }
 
 export function setGameCatalogPageSize(pageSize) {
@@ -528,17 +569,17 @@ export function getPublicGameCatalog({ page = 1, search = "", provider = "", cat
     clauses.push("(g.provider_code = ? OR p.name = ?)");
     parameters.push(provider, provider);
   }
-  if (category === "PG Slot") {
-    clauses.push("(lower(g.category) LIKE '%slot%' OR lower(g.game_type) LIKE '%slot%' OR lower(p.name) LIKE '%pg%' OR lower(p.name) LIKE '%jili%' OR lower(p.name) LIKE '%pragmatic%')");
+  if (category === "Popular") {
+    clauses.push("g.is_popular = 1");
+  } else if (category === "PG Slot") {
+    clauses.push("(g.category = 'Slots' OR lower(g.game_type) LIKE '%slot%' OR lower(p.name) LIKE '%pg%' OR lower(p.name) LIKE '%jili%' OR lower(p.name) LIKE '%pragmatic%')");
   } else if (category === "Spribe") {
-    clauses.push("(lower(g.category) LIKE '%spribe%' OR lower(p.name) LIKE '%spribe%')");
-  } else if (category === "Fishing") {
-    clauses.push("(lower(g.category) LIKE '%fish%' OR lower(g.game_type) LIKE '%fish%' OR lower(p.name) LIKE '%fish%')");
+    clauses.push("(lower(g.game_type) LIKE '%spribe%' OR lower(p.name) LIKE '%spribe%')");
   } else if (category === "InOut") {
-    clauses.push("(lower(g.category) LIKE '%inout%' OR lower(g.game_type) LIKE '%inout%' OR lower(p.name) LIKE '%inout%')");
-  } else if (category && category !== "Popular") {
-    clauses.push("(g.category = ? OR p.name = ?)");
-    parameters.push(category, category);
+    clauses.push("(lower(g.game_type) LIKE '%inout%' OR lower(p.name) LIKE '%inout%')");
+  } else if (GAME_CATEGORIES.includes(category)) {
+    clauses.push("g.category = ?");
+    parameters.push(category);
   }
   const where = clauses.join(" AND ");
   const total = db.prepare(`
@@ -566,6 +607,7 @@ export function getPublicGameCatalog({ page = 1, search = "", provider = "", cat
     providerCode: game.provider_code,
     gameType: game.game_type,
     category: game.category,
+    isPopular: Boolean(game.is_popular),
     thumbnail: game.thumbnail,
     status: game.provider_status,
   }));
@@ -575,10 +617,10 @@ export function getPublicGameCatalog({ page = 1, search = "", provider = "", cat
     WHERE p.enabled = 1 AND g.enabled = 1 ORDER BY p.name COLLATE NOCASE
   `).all().map((row) => ({ code: row.code, name: row.name }));
   const categories = db.prepare(`
-    SELECT DISTINCT category FROM managed_games g
+    SELECT category FROM managed_games g
     JOIN game_providers p ON p.code = g.provider_code
-    WHERE g.enabled = 1 AND p.enabled = 1 AND category != ''
-    ORDER BY category COLLATE NOCASE
+    WHERE g.enabled = 1 AND p.enabled = 1
+    GROUP BY category ORDER BY category COLLATE NOCASE
   `).all().map((row) => row.category);
   return { games, page: currentPage, pageSize, total, pageCount, hasMore: currentPage < pageCount, providers, categories };
 }
