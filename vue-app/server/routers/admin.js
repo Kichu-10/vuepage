@@ -6,10 +6,34 @@ import multer from "multer";
 import { z } from "zod";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
-import { changeBalance, decideTransaction, readDb, writeDb } from "../database.js";
+import {
+  addManagedGame,
+  changeBalance,
+  db,
+  decideTransaction,
+  getGameCatalogPageSize,
+  getGameManagementStats,
+  getManagedGame,
+  getManagedProvider,
+  listManagedGames,
+  listManagedProviders,
+  readDb,
+  saveManagedProvider,
+  setGameCatalogPageSize,
+  updateManagedGame,
+  updateManagedGameEnabled,
+  writeDb,
+} from "../database.js";
 import { approveTransaction } from "../services/wallet.js";
 import { logger } from "../config/logger.js";
-import { currencyForCountry, displayCurrency } from "../services/game-provider.js";
+import {
+  GameProviderError,
+  currencyForCountry,
+  displayCurrency,
+  isHuiduConfigured,
+  listAvailableProviderSources,
+  listGamesFromProviderCode,
+} from "../services/game-provider.js";
 
 const transactionDecisionSchema = z.object({ status: z.enum(["approved", "rejected"]) });
 const userUpdateSchema = z.object({
@@ -43,6 +67,62 @@ const gameResultSchema = z.object({
   amount: z.coerce.number().finite().min(0).max(100000000),
   reference: z.string().trim().max(150).optional().default(""),
 });
+const providerCodeSchema = z.string().trim().min(1).max(80).regex(/^[a-zA-Z0-9_-]+$/);
+const managedProviderSchema = z.object({
+  code: providerCodeSchema,
+  name: z.string().trim().min(1).max(120).optional(),
+  enabled: z.boolean().optional().default(false),
+});
+const providerUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  enabled: z.boolean().optional(),
+}).refine((value) => value.name !== undefined || value.enabled !== undefined, "Provide provider changes");
+function validThumbnail(value) {
+  return !value || (value.startsWith("/") && !value.startsWith("//")) || /^https:\/\//i.test(value);
+}
+const gameImportSchema = z.object({
+  providerCode: providerCodeSchema,
+  externalId: z.string().trim().min(1).max(120).regex(/^[a-zA-Z0-9_-]+$/),
+  category: z.string().trim().max(80).optional().default(""),
+  thumbnail: z.string().trim().max(500).optional().default("").refine(
+    validThumbnail,
+    "Thumbnail must be an HTTPS URL or a site-relative path",
+  ),
+  sortOrder: z.number().int().min(-100000).max(100000).optional().default(0),
+});
+const gameUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(160).optional(),
+  thumbnail: z.string().trim().max(500).optional().refine(
+    (value) => value === undefined || validThumbnail(value),
+    "Thumbnail must be an HTTPS URL or a site-relative path",
+  ),
+  category: z.string().trim().max(80).optional(),
+  sortOrder: z.number().int().min(-100000).max(100000).optional(),
+  enabled: z.boolean().optional(),
+}).refine((value) => Object.keys(value).length > 0, "Provide game changes");
+const catalogSettingsSchema = z.object({
+  pageSize: z.number().int().min(1).max(100),
+});
+
+function recordGameManagementAudit(adminUserId, action, target, details) {
+  const admin = db.prepare("SELECT username FROM users WHERE id = ?").get(adminUserId);
+  db.prepare(`
+    INSERT INTO audit_logs (id, admin_username, action, target, details, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(randomUUID(), admin?.username || "admin", action, target, details, new Date().toISOString());
+  db.prepare(`
+    DELETE FROM audit_logs
+    WHERE id NOT IN (SELECT id FROM audit_logs ORDER BY created_at DESC, rowid DESC LIMIT 1000)
+  `).run();
+}
+
+function catalogFailure(res, error, fallback) {
+  if (error instanceof GameProviderError) {
+    return res.status(error.status).json({ error: error.message, ...(error.code === undefined ? {} : { code: error.code }) });
+  }
+  logger.error("admin_game_management_failed", { error: error instanceof Error ? error.message : String(error) });
+  return res.status(502).json({ error: fallback });
+}
 
 function addAudit(db, adminUsername, action, target, details = "") {
   db.auditLogs ||= [];
@@ -135,6 +215,149 @@ export function createAdminRouter(uploadDir) {
       }
     }
     res.json({ promotion });
+  });
+
+  router.get("/game-management", (_req, res) => {
+    const providers = listManagedProviders();
+    const games = listManagedGames();
+    res.json({
+      providers,
+      games,
+      stats: getGameManagementStats(),
+      pageSize: getGameCatalogPageSize(),
+      providerApiConfigured: isHuiduConfigured(),
+    });
+  });
+
+  router.get("/game-management/provider-catalog", async (_req, res) => {
+    try {
+      const providers = await listAvailableProviderSources();
+      res.json({
+        providers: providers.map(({ code, name }) => ({ code, name: name || code })),
+        providerApiConfigured: true,
+      });
+    } catch (error) {
+      catalogFailure(res, error, "Could not load available providers");
+    }
+  });
+
+  router.post("/game-management/providers", validate(managedProviderSchema), async (req, res) => {
+    try {
+      const sources = await listAvailableProviderSources();
+      const source = sources.find((provider) => provider.code === req.body.code);
+      if (!source) return res.status(400).json({ error: "Select a provider available from HUIDU" });
+      const provider = saveManagedProvider({
+        code: source.code,
+        name: req.body.name || source.name || source.code,
+        enabled: req.body.enabled,
+      });
+      recordGameManagementAudit(req.user.id, "GAME_PROVIDER_SAVED", provider.name, `Provider ${provider.enabled ? "enabled" : "added disabled"}`);
+      res.status(201).json({ provider });
+    } catch (error) {
+      catalogFailure(res, error, "Could not add game provider");
+    }
+  });
+
+  router.patch("/game-management/providers/:code", validate(providerUpdateSchema), (req, res) => {
+    const existing = getManagedProvider(req.params.code);
+    if (!existing) return res.status(404).json({ error: "Game provider not found" });
+    const provider = saveManagedProvider({
+      code: existing.code,
+      name: req.body.name || existing.name,
+      enabled: req.body.enabled ?? existing.enabled,
+    });
+    try {
+      recordGameManagementAudit(
+        req.user.id,
+        "GAME_PROVIDER_UPDATED",
+        provider.name,
+        `Provider ${provider.enabled ? "enabled" : "disabled"}`,
+      );
+      res.json({ provider });
+    } catch (error) {
+      logger.error("admin_game_provider_audit_failed", { providerCode: provider.code, error: error instanceof Error ? error.message : String(error) });
+      res.status(500).json({ error: "Provider was updated, but its audit record could not be saved" });
+    }
+  });
+
+  router.get("/game-management/providers/:code/catalog", async (req, res) => {
+    if (!getManagedProvider(req.params.code)) return res.status(404).json({ error: "Game provider not found" });
+    try {
+      res.json({ games: await listGamesFromProviderCode(req.params.code) });
+    } catch (error) {
+      catalogFailure(res, error, "Could not load games from this provider");
+    }
+  });
+
+  router.post("/game-management/games", validate(gameImportSchema), async (req, res) => {
+    const provider = getManagedProvider(req.body.providerCode);
+    if (!provider) return res.status(404).json({ error: "Add this provider before importing its games" });
+    try {
+      const sourceGames = await listGamesFromProviderCode(provider.code);
+      const sourceGame = sourceGames.find((game) => game.id === req.body.externalId);
+      if (!sourceGame) return res.status(400).json({ error: "Select a game available from the chosen provider" });
+      const game = addManagedGame({
+        providerCode: provider.code,
+        externalId: sourceGame.id,
+        name: sourceGame.name,
+        thumbnail: req.body.thumbnail,
+        category: req.body.category || sourceGame.gameType,
+        gameType: sourceGame.gameType,
+        sortOrder: req.body.sortOrder,
+        enabled: false,
+        providerStatus: sourceGame.status,
+      });
+      recordGameManagementAudit(req.user.id, "GAME_IMPORTED", game.name, `Imported from ${provider.name}; disabled until explicitly enabled`);
+      res.status(201).json({ game });
+    } catch (error) {
+      if (String(error?.code || "").startsWith("ERR_SQLITE_CONSTRAINT") || String(error?.message || "").includes("constraint failed")) {
+        return res.status(409).json({ error: "This game or a game with the same name is already managed" });
+      }
+      catalogFailure(res, error, "Could not add game");
+    }
+  });
+
+  router.patch("/game-management/games/:id", validate(gameUpdateSchema), (req, res) => {
+    const existing = getManagedGame(req.params.id);
+    if (!existing) return res.status(404).json({ error: "Managed game not found" });
+    if (req.body.enabled === true && existing.providerStatus !== 0) {
+      return res.status(409).json({ error: "This provider currently reports the game as unavailable" });
+    }
+    try {
+      const game = updateManagedGame(existing.id, req.body);
+      recordGameManagementAudit(req.user.id, "GAME_UPDATED", game.name, `Game ${game.enabled ? "enabled" : "disabled or updated"}`);
+      res.json({ game });
+    } catch (error) {
+      if (String(error?.code || "").startsWith("ERR_SQLITE_CONSTRAINT") || String(error?.message || "").includes("constraint failed")) {
+        return res.status(409).json({ error: "A managed game with this name already exists" });
+      }
+      logger.error("admin_managed_game_update_failed", { gameId: existing.id, error: error instanceof Error ? error.message : String(error) });
+      res.status(500).json({ error: "Could not update game" });
+    }
+  });
+
+  router.delete("/game-management/games/:id", (req, res) => {
+    const existing = getManagedGame(req.params.id);
+    if (!existing) return res.status(404).json({ error: "Managed game not found" });
+    try {
+      const game = updateManagedGameEnabled(existing.id, false);
+      recordGameManagementAudit(req.user.id, "GAME_REMOVED_FROM_PUBLIC_LIST", game.name, "Game disabled; provider and game records retained");
+      res.json({ game });
+    } catch (error) {
+      logger.error("admin_managed_game_disable_failed", { gameId: existing.id, error: error instanceof Error ? error.message : String(error) });
+      res.status(500).json({ error: "Could not remove game from the public listing" });
+    }
+  });
+
+  router.patch("/game-management/catalog-settings", validate(catalogSettingsSchema), (req, res) => {
+    const pageSize = setGameCatalogPageSize(req.body.pageSize);
+    try {
+      recordGameManagementAudit(req.user.id, "GAME_CATALOG_PAGE_SIZE_UPDATED", "Public game catalog", `Page size set to ${pageSize}`);
+      res.json({ pageSize });
+    } catch (error) {
+      logger.error("admin_game_catalog_settings_audit_failed", { error: error instanceof Error ? error.message : String(error) });
+      res.status(500).json({ error: "Catalog page size was updated, but its audit record could not be saved" });
+    }
   });
 
   router.get("/stats", (_req, res) => {

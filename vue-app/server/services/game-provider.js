@@ -44,6 +44,15 @@ function config() {
   };
 }
 
+export function isHuiduConfigured() {
+  try {
+    config();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function encryptHuiduPayload(plaintext, aesKey) {
   const key = Buffer.isBuffer(aesKey) ? aesKey : Buffer.from(aesKey, "utf8");
   if (key.length !== 32) throw new TypeError("HUIDU AES key must be exactly 32 bytes");
@@ -306,17 +315,7 @@ function catalogRetryDelay() {
 }
 
 async function loadProviderGames() {
-  const current = config();
-  const result = await providerGet("/game/providers", {
-    agency_uid: current.agencyUid,
-    lang: "en",
-  });
-  if (!Array.isArray(result.data)) throw new GameProviderError("HUIDU returned an invalid provider list");
-  const providers = result.data.map((provider) => {
-    const parsed = providerSchema.safeParse(provider);
-    if (!parsed.success) throw new GameProviderError("HUIDU returned an invalid provider entry");
-    return parsed.data;
-  }).filter((provider) => provider.status === undefined || provider.status === 1);
+  const providers = await listAvailableProviderSources();
 
   const games = [];
   for (const [index, provider] of providers.entries()) {
@@ -349,6 +348,29 @@ async function refreshProviderGames() {
     });
   }
   return pendingCatalog;
+}
+
+export async function listAvailableProviderSources() {
+  const current = config();
+  const result = await providerGet("/game/providers", {
+    agency_uid: current.agencyUid,
+    lang: "en",
+  });
+  if (!Array.isArray(result.data)) throw new GameProviderError("HUIDU returned an invalid provider list");
+  return result.data.map((provider) => {
+    const parsed = providerSchema.safeParse(provider);
+    if (!parsed.success) throw new GameProviderError("HUIDU returned an invalid provider entry");
+    return parsed.data;
+  }).filter((provider) => provider.status === undefined || provider.status === 1);
+}
+
+export async function listGamesFromProviderCode(providerCode) {
+  if (typeof providerCode !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(providerCode)) {
+    throw new GameProviderError("Invalid game provider", 400);
+  }
+  const provider = (await listAvailableProviderSources()).find((item) => item.code === providerCode);
+  if (!provider) throw new GameProviderError("Provider is not available from HUIDU", 404);
+  return listGamesForProvider(provider);
 }
 
 export async function listProviderGames() {
