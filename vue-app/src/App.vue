@@ -101,9 +101,9 @@
 
       <section v-if="currentPage === 'games' && activeGame" class="game-player">
         <div class="game-player-heading">
-          <button type="button" class="game-back-button" @click="closeGame">
+          <button type="button" class="game-back-button" :disabled="returningGameFunds" @click="closeGame">
             <ChevronLeft :size="18" />
-            Back to Games
+            {{ returningGameFunds ? "Returning game funds…" : "Back to Games" }}
           </button>
           <div>
             <span class="eyebrow">{{ activeGame.provider }}</span>
@@ -321,9 +321,9 @@
             <article class="wallet-summary">
               <span>Game wallet · {{ gameWalletDisplayCurrency }}</span>
               <strong>{{ gameWalletLoading ? "Checking..." : `${gameWalletDisplayCurrency} ${formatMoney(gameWalletBalance)}` }}</strong>
-              <small>Funds held by the game provider</small>
+              <small>Game funds and winnings stay here when you close a game</small>
               <button class="text-action" :disabled="gameWalletLoading || returningGameFunds" @click="returnGameFunds">
-                {{ returningGameFunds ? "Returning..." : "Return game funds" }}
+                {{ returningGameFunds ? "Returning..." : "Move Game Wallet balance to Main Wallet" }}
               </button>
             </article>
           </div>
@@ -427,7 +427,20 @@
           <button class="close-button" aria-label="Close dialog" @click="modal = null"><X :size="22" /></button>
         </div>
 
-        <form v-if="modal === 'auth'" class="modal-content auth-form" @submit.prevent="submitAuth">
+        <form v-if="modal === 'game-funding'" class="modal-content auth-form" @submit.prevent="launchSelectedGame">
+          <p>Choose how much to move from Main Wallet to {{ selectedGame?.name || "this game" }}. The rest stays in Main Wallet. Winnings stay in Game Wallet, including after you close the game. You can manually move funds back from the Wallet page.</p>
+          <p><strong>Main Wallet:</strong> {{ currencyLabel }} {{ formatMoney(balance) }}</p>
+          <label>
+            <span>Amount to move to Game Wallet (minimum {{ currencyLabel }} 100)</span>
+            <input v-model="gameFundingAmount" type="number" min="100" max="100000000" step="0.01" inputmode="decimal" required />
+          </label>
+          <p class="auth-configuration-note">The server checks your available Main Wallet balance before moving funds. Pending withdrawals are not available for game funding.</p>
+          <button class="primary-button full-button" type="submit" :disabled="launchingGameId !== null">
+            {{ launchingGameId ? "Opening game..." : "Continue to game" }}
+          </button>
+        </form>
+
+        <form v-else-if="modal === 'auth'" class="modal-content auth-form" @submit.prevent="submitAuth">
           <div class="wallet-tabs">
             <button type="button" :class="{ active: authMode === 'login' }" @click="authMode = 'login'">Sign In</button>
             <button type="button" :class="{ active: authMode === 'register' }" @click="authMode = 'register'">Register</button>
@@ -492,7 +505,7 @@
             v-for="game in games.filter((item) => favorites.includes(item.id))"
             :key="game.id"
             class="favorite-game"
-            @click="play(game); modal = null"
+            @click="play(game)"
           >
             <img :src="game.provider.toLowerCase().includes('pg') || game.gameType.toLowerCase().includes('slot') ? slot : fish" :alt="game.name" />
             <span><strong>{{ game.name }}</strong><small>{{ game.provider }}</small></span>
@@ -620,7 +633,7 @@ import spribeCategory from "./assets/03_spribe.png";
 import fishingCategory from "./assets/04_fishing.png";
 import inOutCategory from "./assets/05_inout.png";
 
-type Modal = "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | "transactions" | "favorites" | "support" | null;
+type Modal = "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | "transactions" | "favorites" | "support" | "game-funding" | null;
 type AuthUser = { id: string; username: string; phone: string; email: string; country: string; kycStatus: string; role: "user" | "admin"; balance: number; status: string; createdAt: string; lastLoginAt: string | null; googlePictureUrl?: string };
 type WalletTransaction = { id: string; type: "deposit" | "withdrawal"; amount: number; status: string; createdAt: string; paymentMethod?: string; paymentReference?: string; paymentNote?: string };
 type PaymentDetails = { bankName: string; accountName: string; accountNumber: string; iban: string; upiId: string; walletName: string; walletNumber: string; instructions: string };
@@ -672,6 +685,8 @@ const gamesLoadSentinel = ref<HTMLElement | null>(null);
 let gamesLoadObserver: IntersectionObserver | undefined;
 let gamesLoadPromise: Promise<void> | undefined;
 const launchingGameId = ref<string | null>(null);
+const selectedGame = ref<Game | null>(null);
+const gameFundingAmount = ref("");
 const activeGame = ref<Game | null>(null);
 const activeGameUrl = ref("");
 const gameFrameLoading = ref(false);
@@ -812,6 +827,7 @@ watch([selectedCategory, selectedProvider, query, gameSort], () => {
   displayedGameCount.value = gamesBatchSize;
 });
 const modalTitle = computed(() => {
+  if (modal.value === "game-funding") return "Choose game funding";
   if (modal.value === "promo") return "Promotions";
   if (modal.value === "auth") return authMode.value === "login" ? "Sign In" : "Create Account";
   if (modal.value === "kyc") return "KYC Verification";
@@ -843,6 +859,10 @@ watch(() => [route.path, signedIn.value] as const, ([path, isSignedIn]) => {
     void refreshGameWallet();
     void loadWalletTransactions();
   }
+});
+
+watch(() => route.path, (path) => {
+  if (path !== "/games" && activeGame.value) void closeGame();
 });
 
 watch([signedIn, () => route.path, modal], ([isSignedIn, path, activeModal]) => {
@@ -1128,10 +1148,11 @@ async function loadPromotions(): Promise<void> {
     promotionsLoading.value = false;
   }
 }
-function navigateTo(path: string): void {
+async function navigateTo(path: string): Promise<void> {
   modal.value = null;
   if (path !== "/games") searchOpen.value = false;
-  void router.push(path);
+  if (path !== "/games" && activeGame.value) await closeGame();
+  await router.push(path);
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function changeBannerSlide(index: number): void {
@@ -1146,15 +1167,17 @@ function toggleGameSearch(): void {
   searchOpen.value = !searchOpen.value;
   if (!searchOpen.value) query.value = "";
 }
-async function refreshGameWallet(): Promise<void> {
-  if (!signedIn.value) return;
+async function refreshGameWallet(): Promise<boolean> {
+  if (!signedIn.value) return false;
   gameWalletLoading.value = true;
   try {
     const data = await api("/api/games/wallet");
     gameWalletBalance.value = Number(data.balance || 0);
     gameWalletCurrency.value = data.currency || currencyCode.value;
+    return true;
   } catch (error) {
     notify(error instanceof Error ? error.message : "Could not check the game wallet");
+    return false;
   } finally {
     gameWalletLoading.value = false;
   }
@@ -1164,10 +1187,16 @@ async function returnGameFunds(): Promise<void> {
   returningGameFunds.value = true;
   try {
     const data = await api("/api/games/wallet/return", { method: "POST", body: "{}" });
-    gameWalletBalance.value = 0;
+    gameWalletBalance.value = Number(data.remainingGameBalance || 0);
     balance.value = data.balance;
     if (user.value) user.value.balance = data.balance;
-    notify(`${displayCurrency(data.currency)} ${formatMoney(data.amount)} returned to your main wallet`);
+    if (data.amount > 0) {
+      notify(data.transactionId
+        ? `${displayCurrency(data.currency)} ${formatMoney(data.amount)} returned · Ref ${data.transactionId}`
+        : `${displayCurrency(data.currency)} ${formatMoney(data.amount)} returned, but no transaction reference was provided. Contact support.`);
+    } else {
+      notify("No game funds remained to return");
+    }
   } catch (error) {
     notify(error instanceof Error ? error.message : "Could not return game funds");
     await refreshGameWallet();
@@ -1195,10 +1224,22 @@ function toggleFavorite(id: string): void {
     ? favorites.value.filter((favorite) => favorite !== id)
     : [...favorites.value, id];
 }
-async function play(game: Game): Promise<void> {
+function play(game: Game): void {
   if (requireSignIn()) return;
   if (game.status !== 0) {
     notify("This game is currently unavailable");
+    return;
+  }
+  if (launchingGameId.value !== null) return;
+  selectedGame.value = game;
+  gameFundingAmount.value = "";
+  modal.value = "game-funding";
+}
+async function launchSelectedGame(): Promise<void> {
+  const game = selectedGame.value;
+  const amountToFund = Number(gameFundingAmount.value);
+  if (!game || !Number.isFinite(amountToFund) || amountToFund < 100 || amountToFund > 100_000_000) {
+    notify(`Choose an amount from ${currencyLabel.value} 100 to ${currencyLabel.value} 100000000`);
     return;
   }
   if (launchingGameId.value !== null) return;
@@ -1207,7 +1248,7 @@ async function play(game: Game): Promise<void> {
     const platform = window.matchMedia("(max-width: 760px)").matches ? 2 : 1;
     const data = await api(`/api/games/${encodeURIComponent(game.id)}/launch`, {
       method: "POST",
-      body: JSON.stringify({ platform }),
+      body: JSON.stringify({ amount: amountToFund, platform }),
     });
     if (typeof data.gameUrl !== "string") throw new Error("The provider returned an invalid game URL");
     let gameUrl: string;
@@ -1220,6 +1261,9 @@ async function play(game: Game): Promise<void> {
     }
     balance.value = Number(data.balance);
     if (user.value) user.value.balance = balance.value;
+    gameWalletBalance.value = Number(data.gameWalletBalance);
+    gameWalletCurrency.value = currencyCode.value;
+    modal.value = null;
     if (route.path !== "/games") await router.push("/games");
     activeGame.value = game;
     activeGameUrl.value = gameUrl;
@@ -1260,12 +1304,17 @@ function openGameWithProvider(): void {
   }
   window.location.assign(activeGameUrl.value);
 }
-function closeGame(): void {
+async function closeGame(): Promise<void> {
+  const hadActiveGame = Boolean(activeGame.value);
   clearGameFrameLoadTimer();
   activeGame.value = null;
   activeGameUrl.value = "";
   gameFrameLoading.value = false;
   gameFrameError.value = "";
+  await nextTick();
+  if (hadActiveGame && signedIn.value && await refreshGameWallet()) {
+    notify("Game closed. Remaining funds and winnings stay in your Game Wallet.");
+  }
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 async function submitWalletRequest(): Promise<void> {
@@ -1468,19 +1517,26 @@ async function submitAuth(): Promise<void> {
 }
 function toggleSignIn(): void {
   if (signedIn.value) {
-    token.value = "";
-    localStorage.removeItem("b9_token");
-    signedIn.value = false;
-    user.value = null;
-    balance.value = 0;
-    unreadCount.value = 0;
-    inboxMessages.value = [];
-    if (inboxTimer) clearInterval(inboxTimer);
-    notify("Signed out");
+    if (activeGame.value) {
+      void closeGame().finally(signOut);
+      return;
+    }
+    signOut();
   } else {
     authMode.value = "login";
     modal.value = "auth";
   }
+}
+function signOut(): void {
+  token.value = "";
+  localStorage.removeItem("b9_token");
+  signedIn.value = false;
+  user.value = null;
+  balance.value = 0;
+  unreadCount.value = 0;
+  inboxMessages.value = [];
+  if (inboxTimer) clearInterval(inboxTimer);
+  notify("Signed out");
 }
 function openProfile(): void {
   if (!requireSignIn()) modal.value = "profile";
