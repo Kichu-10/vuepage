@@ -918,6 +918,7 @@ test("HUIDU wallet return queries the balance and credits the main wallet once",
       simulateTimeout = false;
       throw new Error("simulated network timeout");
     }
+    providerBalanceCents = 0;
     return huiduResponse({
       transfer_amount: "42.50",
       after_amount: "0.00",
@@ -929,17 +930,108 @@ test("HUIDU wallet return queries the balance and credits the main wallet once",
     const wallet = await request(app).get("/api/games/wallet").set(headers).expect(200);
     assert.equal(wallet.body.currency, player.currency);
     assert.equal(wallet.body.balance, 42.5);
-    await request(app).post("/api/games/wallet/return").set(headers).send({}).expect(502);
+    await request(app).post("/api/games/wallet/return").set(headers).send({ balance: 999999, amount: 999999 }).expect(502);
     assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 100);
-    const returned = await request(app).post("/api/games/wallet/return").set(headers).send({}).expect(200);
+    const returned = await request(app).post("/api/games/wallet/return").set(headers).send({ balance: 999999, amount: 999999 }).expect(200);
     assert.equal(transferIds.length, 2);
     assert.equal(transferIds[0], transferIds[1]);
     assert.equal(returned.body.amount, 42.5);
+    assert.equal(returned.body.remainingGameBalance, 0);
     assert.equal(returned.body.balance, 142.5);
+    assert.equal(returned.body.transactionId, transferIds[0]);
     assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 1);
+    assert.equal(database.db.prepare("SELECT transaction_id FROM ledger_entries").get().transaction_id, returned.body.transactionId);
     assert.equal(database.db.prepare("SELECT direction FROM game_wallet_transfers").get().direction, "out");
     assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 142.5);
     assert.ok(player.playerId.startsWith(process.env.HUIDU_PLAYER_PREFIX));
+    const repeated = await request(app).post("/api/games/wallet/return").set(headers).send({}).expect(200);
+    assert.equal(repeated.body.amount, 0);
+    assert.equal(repeated.body.transactionId, null);
+    assert.equal(transferIds.length, 2);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 1);
+    assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 142.5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HUIDU duplicate return responses keep the original transfer pending for safe retry", async () => {
+  resetDatabase({ users: [{ ...account, country: "IN", balance: 100 }, admin] });
+  const player = database.ensureGamePlayer(account.id, "INR");
+  database.markGamePlayerCreated(account.id);
+  const originalFetch = globalThis.fetch;
+  const transferIds = [];
+  globalThis.fetch = async (url, options) => {
+    const requestUrl = new URL(String(url));
+    if (requestUrl.pathname !== "/game/v2") throw new Error(`Unexpected HUIDU URL ${url}`);
+    const payload = decodeHuiduRequest(options);
+    if (Number(payload.credit_amount) === 0) {
+      return huiduResponse({ after_amount: "12.00", transfer_status: 1 });
+    }
+    transferIds.push(payload.transfer_id);
+    return {
+      ok: true,
+      json: async () => ({ code: 10027, msg: "Transfer already exists" }),
+    };
+  };
+  try {
+    const headers = { Authorization: `Bearer ${tokenFor(account)}` };
+    const first = await request(app).post("/api/games/wallet/return").set(headers).send({}).expect(409);
+    const second = await request(app).post("/api/games/wallet/return").set(headers).send({}).expect(409);
+    assert.match(first.body.error, /outcome is uncertain and remains pending/i);
+    assert.equal(second.body.code, 10027);
+    assert.equal(transferIds.length, 2);
+    assert.equal(transferIds[0], transferIds[1]);
+    assert.equal(first.body.transactionId, transferIds[0]);
+    assert.equal(database.db.prepare("SELECT status FROM game_wallet_transfers").get().status, "pending");
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 0);
+    assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 100);
+    assert.ok(player.playerId.startsWith(process.env.HUIDU_PLAYER_PREFIX));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Concurrent HUIDU wallet returns create at most one provider transfer", async () => {
+  resetDatabase({ users: [{ ...account, country: "IN", balance: 100 }, admin] });
+  database.ensureGamePlayer(account.id, "INR");
+  database.markGamePlayerCreated(account.id);
+  const originalFetch = globalThis.fetch;
+  const transferIds = [];
+  let balanceReads = 0;
+  let releaseBalanceReads;
+  const bothBalanceReads = new Promise((resolve) => {
+    releaseBalanceReads = resolve;
+  });
+  globalThis.fetch = async (url, options) => {
+    const requestUrl = new URL(String(url));
+    if (requestUrl.pathname !== "/game/v2") throw new Error(`Unexpected HUIDU URL ${url}`);
+    const payload = decodeHuiduRequest(options);
+    if (Number(payload.credit_amount) === 0) {
+      balanceReads += 1;
+      if (balanceReads === 2) releaseBalanceReads();
+      await bothBalanceReads;
+      return huiduResponse({ after_amount: "12.00", transfer_status: 1 });
+    }
+    transferIds.push(payload.transfer_id);
+    return huiduResponse({
+      transfer_amount: "12.00",
+      after_amount: "0.00",
+      transfer_status: 1,
+    });
+  };
+  try {
+    const headers = { Authorization: `Bearer ${tokenFor(account)}` };
+    const [first, second] = await Promise.all([
+      request(app).post("/api/games/wallet/return").set(headers).send({}),
+      request(app).post("/api/games/wallet/return").set(headers).send({}),
+    ]);
+    assert.deepEqual([first.status, second.status].sort(), [200, 409]);
+    assert.equal(balanceReads, 2);
+    assert.equal(transferIds.length, 1);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM game_wallet_transfers").get().count, 1);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 1);
+    assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 112);
   } finally {
     globalThis.fetch = originalFetch;
   }
