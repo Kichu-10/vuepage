@@ -17,7 +17,7 @@ test("admin game dashboard lists managed games without provider credentials", as
     games: [{
       id: "sample-game", providerCode: "pg", provider: "PGSoft", providerEnabled: true,
       externalId: "sample-game", name: "Sample Game", thumbnail: "", category: "Slots",
-      gameType: "Slot", sortOrder: 1, enabled: true, providerStatus: 0,
+      isPopular: false, gameType: "Slot", sortOrder: 1, enabled: true, providerStatus: 0,
     }],
     stats: { totalProviders: 1, totalGames: 1, availableGames: 1, activeGames: 1, disabledGames: 0 },
     pageSize: 12,
@@ -32,6 +32,10 @@ test("admin game dashboard lists managed games without provider credentials", as
   await expect(page.getByRole("heading", { name: "Game and Provider Management", level: 2 })).toBeVisible();
   await expect(page.getByText("Total providers")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Sample Game name" })).toHaveValue("Sample Game");
+  await expect(page.getByLabel("Sample Game provider")).toHaveValue("pg");
+  await expect(page.getByLabel("Sample Game category")).toHaveValue("Slots");
+  await expect(page.getByLabel("Mark Sample Game as popular")).not.toBeChecked();
+  await expect(page.getByLabel("Upload Sample Game thumbnail")).toHaveAttribute("accept", "image/jpeg,image/png,image/webp");
   await expect(page.getByText("Provider API credentials are read from server environment variables")).toBeVisible();
   await expect(page.locator("body")).not.toContainText("test-password");
 });
@@ -43,12 +47,18 @@ test("navigation works, icons render, and the home page shows the first three ga
         provider: "PGSoft",
         providerCode: "PG",
         gameType: "Slot",
+        category: "Slots",
+        isPopular: true,
         status: 0,
       }));
   await page.route("**/api/games?*", (route) => {
     const url = new URL(route.request().url());
     const search = (url.searchParams.get("search") || "").toLowerCase();
-    const selected = games.filter((game) => !search || `${game.name} ${game.provider}`.toLowerCase().includes(search));
+    const category = url.searchParams.get("category") || "";
+    const selected = games.filter((game) => {
+      const matchesCategory = !category || (category === "Popular" ? game.isPopular : game.category === category);
+      return matchesCategory && (!search || `${game.name} ${game.provider}`.toLowerCase().includes(search));
+    });
     return route.fulfill({ json: {
       games: selected,
       page: 1,
@@ -70,8 +80,13 @@ test("navigation works, icons render, and the home page shows the first three ga
   await expect(page.locator(".page-home .game-card")).toHaveCount(3);
   await expect(page.locator(".game-card img").first()).toHaveAttribute("src", /g-aviator\.jpg|g-slot\.jpg/);
   await expect(page.locator(".brand-emblem")).toBeVisible();
-  await expect(page.locator(".header-actions svg")).toHaveCount(4);
+  await expect(page.locator(".header-actions svg")).toHaveCount(3);
   await expect(page.locator(".header-actions svg").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Deposit", exact: true })).toHaveCount(0);
+  const homepageCategories = page.locator(".page-home .categories .category");
+  await expect(homepageCategories).toHaveCount(5);
+  await expect(homepageCategories).toHaveText(["Popular", "PG Slot", "Spribe", "Fishing", "InOut"]);
+  await expect(homepageCategories.nth(4).locator("img")).toHaveAttribute("src", /05_inout\.png/);
   await page.setViewportSize({ width: 375, height: 812 });
   await expect(page.locator(".bottom-nav button svg")).toHaveCount(5);
   await expect(page.locator(".bottom-nav button svg").first()).toBeVisible();
@@ -98,15 +113,21 @@ test("navigation works, icons render, and the home page shows the first three ga
   await page.getByRole("button", { name: "Home", exact: true }).first().click();
   await page.getByRole("button", { name: "Games", exact: true }).first().click();
   await expect(page).toHaveURL(/\/games$/);
+  await expect(page.locator(".game-category-section").first().locator(".game-card")).toHaveCount(5);
+  await expect(page.getByRole("heading", { name: "All Games", exact: true })).toHaveCount(0);
+  await expect(page.locator(".games-heading, .games-toolbar, .games-summary")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Popular Games" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Slot Games" })).toBeVisible();
+  await page.getByRole("button", { name: "View all popular games" }).click();
   await expect(page.locator(".page-games .game-card")).toHaveCount(5);
-  await expect(page.getByRole("heading", { name: "All Games", exact: true })).toBeVisible();
-  await expect(page.locator(".page-games .category-label").filter({ hasText: "PGSoft" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Filter by provider" })).toContainText("PGSoft");
-  await page.getByRole("searchbox", { name: "Search games or providers" }).fill("Game 4");
+  await page.getByRole("button", { name: "Search games" }).click();
+  await page.getByRole("textbox", { name: "Search games" }).fill("Game 4");
   await expect(page.locator(".page-games .game-card")).toHaveCount(1);
   await expect(page.locator(".page-games .game-card").first()).toContainText("Game 4");
-  await page.getByRole("button", { name: "Clear filters" }).click();
+  await page.getByRole("button", { name: "Close search" }).click();
   await expect(page.locator(".page-games .game-card")).toHaveCount(5);
+  await page.getByRole("button", { name: "Back to categories" }).click();
+  await expect(page.getByRole("heading", { name: "Popular Games" })).toBeVisible();
 
   await page.getByRole("button", { name: "Wallet", exact: true }).first().click();
   await expect(page).toHaveURL(/\/wallet$/);
@@ -122,24 +143,28 @@ test("games list loads unique games in server-configured pages while scrolling",
       provider: "PGSoft",
       providerCode: "PG",
       gameType: "Slot",
+      category: "Mini Games",
+      isPopular: true,
       status: 0,
     })),
-    { id: "scroll-game-1", name: "Duplicate Game", provider: "PGSoft", providerCode: "PG", gameType: "Slot", status: 0 },
+    { id: "scroll-game-1", name: "Duplicate Game", provider: "PGSoft", providerCode: "PG", gameType: "Slot", category: "Mini Games", isPopular: true, status: 0 },
   ];
   await page.route("**/api/games?*", (route) => {
     catalogRequests += 1;
     const url = new URL(route.request().url());
+    const category = url.searchParams.get("category") || "";
     const pageNumber = Number(url.searchParams.get("page") || 1);
     const pageSize = 12;
-    const pageGames = games.slice((pageNumber - 1) * pageSize, pageNumber * pageSize);
+    const selectedGames = games.filter((game) => !category || (category === "Popular" ? game.isPopular : game.category === category));
+    const pageGames = selectedGames.slice((pageNumber - 1) * pageSize, pageNumber * pageSize);
     return route.fulfill({
       json: {
         games: pageGames,
         page: pageNumber,
         pageSize,
-        total: 25,
-        pageCount: 3,
-        hasMore: pageNumber < 3,
+        total: selectedGames.length,
+        pageCount: Math.ceil(selectedGames.length / pageSize),
+        hasMore: pageNumber < Math.ceil(selectedGames.length / pageSize),
         providers: [{ code: "PG", name: "PGSoft" }],
         categories: [],
       },
@@ -151,17 +176,20 @@ test("games list loads unique games in server-configured pages while scrolling",
   await page.route("**/api/promotions", (route) => route.fulfill({ json: { promotions: [] } }));
 
   await page.goto("/games");
+  await expect(page.locator(".game-category-section").first().locator(".game-card")).toHaveCount(12);
+  expect(catalogRequests).toBe(4);
+  await page.getByRole("button", { name: "View all popular games" }).click();
   await expect(page.locator(".page-games .game-card")).toHaveCount(12);
-  expect(catalogRequests).toBe(1);
+  expect(catalogRequests).toBe(5);
 
-  for (let attempt = 0; attempt < 4 && catalogRequests < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 4 && catalogRequests < 7; attempt += 1) {
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(150);
   }
-  await expect.poll(() => catalogRequests).toBe(3);
+  await expect.poll(() => catalogRequests).toBe(7);
   await expect(page.locator(".page-games .game-card")).toHaveCount(25);
   await expect(page.locator(".games-end-message")).toContainText("end of the game list");
-  expect(catalogRequests).toBe(3);
+  expect(catalogRequests).toBe(7);
   await expect(page.locator(".page-games .game-card")).toHaveCount(25);
 });
 
@@ -295,4 +323,82 @@ test("wallet request validates before submit and completes a valid deposit", asy
   });
   await depositButton.click();
   await expect(page.getByText("Deposit request submitted for admin approval", { exact: true })).toBeVisible();
+});
+
+test("game player uses the available viewport and requests fullscreen on the iframe", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("b9_token", "playwright-test-token");
+    Object.defineProperty(HTMLIFrameElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: function (this: HTMLIFrameElement) {
+        document.documentElement.dataset.fullscreenTarget = this.title;
+        return Promise.resolve();
+      },
+    });
+  });
+  await page.route("**/api/games?*", (route) => route.fulfill({
+    json: {
+      games: [{ id: "sample-game", name: "Sample Game", provider: "PGSoft", providerCode: "PG", gameType: "Slot", status: 0 }],
+      page: 1,
+      pageSize: 12,
+      total: 1,
+      pageCount: 1,
+      hasMore: false,
+      providers: [{ code: "PG", name: "PGSoft" }],
+      categories: [],
+    },
+  }));
+  await page.route("**/api/payment/details", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/platform/settings", (route) => route.fulfill({ json: {} }));
+  await page.route("**/api/promotions", (route) => route.fulfill({ json: { promotions: [] } }));
+  await page.route("**/api/auth/me", (route) => route.fulfill({
+    json: {
+      user: {
+        id: "demo-user",
+        username: "demo_user",
+        email: "demo@example.test",
+        country: "IN",
+        kycStatus: "not_submitted",
+        role: "user",
+        balance: 1000,
+        status: "active",
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+      },
+    },
+  }));
+  await page.route("**/api/inbox", (route) => route.fulfill({ json: { notifications: [], unreadCount: 0 } }));
+  await page.route("**/api/games/sample-game/launch", (route) => route.fulfill({
+    json: {
+      gameUrl: "https://game.example.test/session",
+      balance: 900,
+      gameWalletBalance: 100,
+    },
+  }));
+  await page.route("https://game.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: "<title>Test game</title>" }));
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/games");
+  await page.locator(".game-category-section").first().getByRole("button", { name: "Play Sample Game" }).click();
+  const fundingDialog = page.getByRole("dialog");
+  await fundingDialog.locator('input[type="number"]').fill("100");
+  await fundingDialog.getByRole("button", { name: "Continue to game" }).click();
+
+  const player = page.locator(".page-frame.game-active");
+  await expect(player).toBeVisible();
+  await expect(page.locator(".topbar")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to Games" })).toBeVisible();
+  await expect(page.locator(".bottom-nav")).toBeHidden();
+  const mobileFrame = await page.locator(".game-player-frame").boundingBox();
+  expect(mobileFrame?.height).toBeGreaterThan(400);
+  await expect(page.locator(".game-player-frame iframe")).toHaveAttribute("allowfullscreen", "");
+  await page.getByRole("button", { name: "Fullscreen" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-fullscreen-target", "Sample Game game");
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const desktopFrame = await page.locator(".game-player-frame").boundingBox();
+  expect(desktopFrame?.height).toBeGreaterThan(400);
+  expect(desktopFrame?.width).toBeGreaterThan(1000);
+  await expect(page.locator(".topbar")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to Games" })).toBeVisible();
 });

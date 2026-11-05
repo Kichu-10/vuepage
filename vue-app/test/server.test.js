@@ -36,7 +36,7 @@ const app = express();
 app.use(express.json());
 app.use("/api/auth", createAuthRouter());
 app.use("/api/wallet", createWalletRouter(path.join(tempDir, "uploads")));
-app.use("/api/games", createGamesRouter());
+app.use("/api/games", createGamesRouter(path.join(tempDir, "uploads")));
 app.use("/api/promotions", createPromotionsRouter(path.join(tempDir, "uploads")));
 app.use("/api/auth", createProfileRouter(path.join(tempDir, "uploads")));
 app.use("/api/admin", createAdminAuthRouter());
@@ -212,6 +212,7 @@ test("admin game management imports, publishes, paginates, and disables catalog 
     const headers = { Authorization: `Bearer ${tokenFor(admin)}` };
     const initial = await request(app).get("/api/admin/game-management").set(headers).expect(200);
     assert.deepEqual(initial.body.stats, { totalProviders: 0, totalGames: 0, availableGames: 0, activeGames: 0, disabledGames: 0 });
+    assert.deepEqual(initial.body.categories, ["Popular", "Mini Games", "Slots", "Fishing"]);
     assert.equal(initial.body.providerApiConfigured, true);
     assert.doesNotMatch(JSON.stringify(initial.body), /test-agency|0123456789abcdef/);
 
@@ -226,8 +227,11 @@ test("admin game management imports, publishes, paginates, and disables catalog 
     const firstGame = await request(app).post("/api/admin/game-management/games").set(headers)
       .send({ providerCode: "pg", externalId: "game-1", category: "Slots", thumbnail: "", sortOrder: 1 }).expect(201);
     assert.equal(firstGame.body.game.enabled, false);
+    assert.equal(firstGame.body.game.isPopular, false);
     await request(app).post("/api/admin/game-management/games").set(headers)
-      .send({ providerCode: "pg", externalId: "game-2", category: "Fishing", sortOrder: 2 }).expect(201);
+      .send({ providerCode: "pg", externalId: "game-2", category: "Fishing", isPopular: true, sortOrder: 2 }).expect(201);
+    await request(app).post("/api/admin/game-management/games").set(headers)
+      .send({ providerCode: "pg", externalId: "game-1", category: "ProviderName" }).expect(400);
     await request(app).post("/api/admin/game-management/games").set(headers)
       .send({ providerCode: "pg", externalId: "game-1" }).expect(409);
     await request(app).post("/api/admin/game-management/providers").set(headers)
@@ -255,10 +259,30 @@ test("admin game management imports, publishes, paginates, and disables catalog 
     assert.equal(secondPage.body.games.length, 1);
     const categoryPage = await request(app).get("/api/games?category=Fishing").expect(200);
     assert.deepEqual(categoryPage.body.games.map((game) => game.id), ["game-2"]);
+    assert.equal(categoryPage.body.games[0].isPopular, true);
+    const popularPage = await request(app).get("/api/games?category=Popular").expect(200);
+    assert.deepEqual(popularPage.body.games.map((game) => game.id), ["game-2"]);
+    await request(app).patch("/api/admin/game-management/games/game-1").set(headers)
+      .send({ category: "Mini Games", isPopular: true }).expect(200);
+    const updatedPopularPage = await request(app).get("/api/games?category=Popular").expect(200);
+    assert.equal(updatedPopularPage.body.total, 2);
+    assert.deepEqual(updatedPopularPage.body.games.map((game) => game.id), ["game-1"]);
+    await request(app).patch("/api/admin/game-management/games/game-1").set(headers)
+      .send({ providerCode: "jili" }).expect(400);
+    const miniGamesPage = await request(app).get("/api/games?category=Mini%20Games").expect(200);
+    assert.equal(miniGamesPage.body.total, 1);
+    await request(app).get("/api/games?category=Unknown").expect(400);
     const searchPage = await request(app).get("/api/games?search=Game%20One").expect(200);
     assert.deepEqual(searchPage.body.games.map((game) => game.id), ["game-1"]);
 
+    const thumbnail = await request(app).post("/api/admin/game-management/games/game-1/thumbnail").set(headers)
+      .attach("thumbnail", Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), { filename: "game.png", contentType: "image/png" })
+      .expect(200);
+    assert.match(thumbnail.body.thumbnail, /^\/api\/games\/game-1\/thumbnail\/[a-f0-9-]+\.png$/);
+    await request(app).get(thumbnail.body.thumbnail).expect(200);
+
     await request(app).delete("/api/admin/game-management/games/game-1").set(headers).expect(200);
+    await request(app).get(thumbnail.body.thumbnail).expect(200);
     assert.equal((await request(app).get("/api/games").expect(200)).body.total, 1);
     assert.equal(database.getManagedGame("game-1").enabled, false);
     assert.equal(database.getManagedProvider("pg").enabled, true);
@@ -270,6 +294,34 @@ test("admin game management imports, publishes, paginates, and disables catalog 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("homepage legacy categories filter enabled games without changing their managed category", async () => {
+  const providerGames = [
+    { code: "pg", name: "PGSoft", gameId: "pg-game", category: "Mini Games", gameType: "Table" },
+    { code: "spribe", name: "Spribe", gameId: "spribe-game", category: "Mini Games", gameType: "Crash" },
+    { code: "inout", name: "InOut", gameId: "inout-game", category: "Mini Games", gameType: "Arcade" },
+  ];
+  for (const item of providerGames) {
+    database.saveManagedProvider({ code: item.code, name: item.name, enabled: true });
+    database.addManagedGame({
+      providerCode: item.code,
+      externalId: item.gameId,
+      name: item.name + " game",
+      category: item.category,
+      gameType: item.gameType,
+      enabled: true,
+      providerStatus: 0,
+    });
+  }
+
+  const pgSlot = await request(app).get("/api/games?category=PG%20Slot").expect(200);
+  assert.deepEqual(pgSlot.body.games.map((game) => game.id), ["pg-game"]);
+  const spribe = await request(app).get("/api/games?category=Spribe").expect(200);
+  assert.deepEqual(spribe.body.games.map((game) => game.id), ["spribe-game"]);
+  const inout = await request(app).get("/api/games?category=InOut").expect(200);
+  assert.deepEqual(inout.body.games.map((game) => game.id), ["inout-game"]);
+  assert.equal(database.getManagedGame("spribe-game").category, "Mini Games");
 });
 
 test("promotions are available only to signed-in users and admin settings control visibility", async () => {
@@ -905,7 +957,8 @@ test("HUIDU maps supplier game UIDs and launches with an atomic wallet credit", 
       provider: "PGSoft",
       providerCode: "pg",
       gameType: "Slot Game",
-      category: "Slot Game",
+      category: "Slots",
+      isPopular: false,
       thumbnail: "",
       status: 0,
     }, {
@@ -914,7 +967,8 @@ test("HUIDU maps supplier game UIDs and launches with an atomic wallet credit", 
       provider: "PGSoft",
       providerCode: "pg",
       gameType: "",
-      category: "",
+      category: "Mini Games",
+      isPopular: false,
       thumbnail: "",
       status: 0,
     }]);
