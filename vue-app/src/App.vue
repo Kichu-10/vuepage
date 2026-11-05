@@ -144,9 +144,9 @@
           <div>
             <span class="eyebrow">GAME LOBBY</span>
             <h1>All Games</h1>
-            <p>Browse the complete game catalog by category or provider.</p>
+            <p>Browse admin-selected games by category or provider.</p>
           </div>
-          <span class="games-total">{{ gamesLoading ? "Loading…" : `${games.length.toLocaleString()} games` }}</span>
+          <span class="games-total">{{ gamesLoading && games.length === 0 ? "Loading…" : `${gameCatalogTotal.toLocaleString()} games` }}</span>
         </section>
         <nav class="categories" aria-label="Game categories">
           <button class="category-arrow" aria-label="Scroll categories left" @click="scrollCategories(-1)"><ChevronLeft :size="22" /></button>
@@ -184,14 +184,14 @@
           <span>{{ filteredGameCount }} games</span>
           <button v-if="selectedCategory !== 'Popular' || selectedProvider || query" type="button" @click="resetGameFilters">Clear filters</button>
         </div>
-        <p v-if="gamesLoading && games.length === 0" class="empty-state" role="status">Loading the full game catalog…</p>
+        <p v-if="gamesLoading && games.length === 0" class="empty-state" role="status">Loading enabled games…</p>
         <div v-else-if="gamesError" class="catalog-error" role="alert">
           <p>{{ gamesError }}</p>
           <button type="button" @click="loadGames">Try again</button>
         </div>
         <div v-else-if="games.length === 0" class="catalog-empty">
           <h2>No games are available yet</h2>
-          <p>The game provider has not returned a catalog. Please try again later.</p>
+          <p>No games have been enabled for the public catalog yet.</p>
           <button type="button" @click="loadGames">Reload games</button>
         </div>
       </template>
@@ -646,6 +646,8 @@ type Game = {
   providerCode: string;
   gameType: string;
   status: number;
+  category?: string;
+  thumbnail?: string;
 };
 
 const gameSort = ref<"popular" | "name" | "provider">("popular");
@@ -666,12 +668,16 @@ const baseCategoryItems = [
 ];
 const gameCategories = computed(() => {
   const entries = baseCategoryItems.map((category) => ({ ...category }));
-  const providerCategories = [...new Set(games.value.map((game) => game.provider).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b))
-    .map((provider) => ({ label: provider, image: popularCategory }));
+  const providerCategories = gameCatalogProviders.value
+    .map((provider) => ({ label: provider.name, image: popularCategory }));
+  const customCategories = gameCatalogCategories.value
+    .map((label) => ({ label, image: popularCategory }));
   return [
     ...entries,
     ...providerCategories.filter((provider) => !entries.some((category) => category.label === provider.label)),
+    ...customCategories.filter((category) =>
+      !entries.some((entry) => entry.label === category.label)
+      && !providerCategories.some((provider) => provider.label === category.label)),
   ];
 });
 const selectedCategory = ref<string>("Popular");
@@ -679,11 +685,15 @@ const categories = computed(() => gameCategories.value.map((category) => categor
 const games = ref<Game[]>([]);
 const gamesLoading = ref(true);
 const gamesError = ref("");
-const gamesBatchSize = 12;
-const displayedGameCount = ref(gamesBatchSize);
+const gameCatalogTotal = ref(0);
+const gameCatalogPage = ref(0);
+const gameCatalogPageCount = ref(0);
+const gameCatalogProviders = ref<{ code: string; name: string }[]>([]);
+const gameCatalogCategories = ref<string[]>([]);
 const gamesLoadSentinel = ref<HTMLElement | null>(null);
 let gamesLoadObserver: IntersectionObserver | undefined;
-let gamesLoadPromise: Promise<void> | undefined;
+let gamesRequestId = 0;
+let gameFilterReloadTimer: ReturnType<typeof setTimeout> | undefined;
 const launchingGameId = ref<string | null>(null);
 const selectedGame = ref<Game | null>(null);
 const gameFundingAmount = ref("");
@@ -783,33 +793,15 @@ const kycLabel = computed(() => {
   if (user.value?.kycStatus === "rejected") return "Rejected — resubmit";
   return "Not submitted";
 });
-const filteredGames = computed(() => {
-  const search = query.value.trim().toLowerCase();
-  let filtered = games.value.filter((game) => {
-    const provider = game.provider.toLowerCase();
-    const gameType = game.gameType.toLowerCase();
-    const categoryMatches = selectedCategory.value === "Popular"
-      || (selectedCategory.value === "PG Slot" && (["pg", "jili", "pragmatic"].some((name) => provider.includes(name)) || gameType.includes("slot")))
-      || (selectedCategory.value === "Spribe" && provider.includes("spribe"))
-      || (selectedCategory.value === "Fishing" && (provider.includes("fish") || gameType.includes("fish")))
-      || (selectedCategory.value === "InOut" && (provider.includes("inout") || gameType.includes("inout")))
-      || game.provider === selectedCategory.value;
-    const searchMatches = !search || `${game.name} ${game.provider} ${game.gameType}`.toLowerCase().includes(search);
-    const providerMatches = !selectedProvider.value || game.provider === selectedProvider.value;
-    return categoryMatches && searchMatches && providerMatches;
-  });
-  if (gameSort.value === "name") filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
-  if (gameSort.value === "provider") filtered = [...filtered].sort((a, b) => a.provider.localeCompare(b.provider) || a.name.localeCompare(b.name));
-  return filtered;
-});
-const hasMoreGames = computed(() => displayedGameCount.value < filteredGames.value.length);
+const filteredGames = computed(() => games.value);
+const hasMoreGames = computed(() => gameCatalogPage.value < gameCatalogPageCount.value);
 const visibleGames = computed(() => currentPage.value === "home"
   ? filteredGames.value.slice(0, 3)
-  : filteredGames.value.slice(0, displayedGameCount.value));
-const gameProviders = computed(() => [...new Set(games.value.map((game) => game.provider).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
-const filteredGameCount = computed(() => visibleGames.value.length);
+  : filteredGames.value);
+const gameProviders = computed(() => gameCatalogProviders.value.map((provider) => provider.name));
+const filteredGameCount = computed(() => gameCatalogTotal.value);
 
-watch([currentPage, gamesLoadSentinel], async ([page]) => {
+watch([currentPage, gamesLoadSentinel, hasMoreGames, gamesLoading, gamesError], async ([page]) => {
   gamesLoadObserver?.disconnect();
   gamesLoadObserver = undefined;
   if (page !== "games" || !gamesLoadSentinel.value || !hasMoreGames.value || gamesLoading.value || gamesError.value) return;
@@ -824,7 +816,8 @@ watch([currentPage, gamesLoadSentinel], async ([page]) => {
 }, { flush: "post" });
 
 watch([selectedCategory, selectedProvider, query, gameSort], () => {
-  displayedGameCount.value = gamesBatchSize;
+  if (gameFilterReloadTimer) clearTimeout(gameFilterReloadTimer);
+  gameFilterReloadTimer = setTimeout(() => { void loadGames(); }, query.value ? 250 : 0);
 });
 const modalTitle = computed(() => {
   if (modal.value === "game-funding") return "Choose game funding";
@@ -903,6 +896,8 @@ onMounted(async () => {
 });
 onUnmounted(() => {
   gamesLoadObserver?.disconnect();
+  if (gameFilterReloadTimer) clearTimeout(gameFilterReloadTimer);
+  gamesRequestId += 1;
   clearGameFrameLoadTimer();
   if (noticeTimer) clearTimeout(noticeTimer);
   if (inboxTimer) clearInterval(inboxTimer);
@@ -1046,6 +1041,7 @@ function displayCurrency(currency: string): string {
   return currency === "INR" || currency === "NPR" ? "Rs." : currency;
 }
 function gameArtwork(game: Game): string {
+  if (game.thumbnail) return game.thumbnail;
   const search = `${game.name} ${game.provider} ${game.gameType}`.toLowerCase();
   if (/aviatrix|aviator|crash|spribe/.test(search)) return search.includes("aviatrix") ? aviatrix : aviator;
   if (/chicken|road/.test(search)) return chicken;
@@ -1093,46 +1089,63 @@ function requireSignIn(): boolean {
   return true;
 }
 async function loadGames(): Promise<void> {
-  if (gamesLoadPromise) return gamesLoadPromise;
+  const requestId = ++gamesRequestId;
   gamesLoading.value = true;
   gamesError.value = "";
-  gamesLoadPromise = (async () => {
-    try {
-      const data = await api("/api/games");
-      const uniqueGames = new Map<string, Game>();
-      for (const game of data.games as Game[]) {
-        if (!uniqueGames.has(game.id)) uniqueGames.set(game.id, game);
-      }
-      games.value = [...uniqueGames.values()];
-      displayedGameCount.value = gamesBatchSize;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      gamesError.value = message === "Game provider is not configured"
-        ? "Game catalog will appear after the provider is configured on the server."
-        : /too many requests|rate limit|cooling down/i.test(message)
-          ? "HUIDU has temporarily rate-limited game catalog requests. Please wait for the provider quota to reset; repeated refreshes will not restore access."
-        : /invalid hash code/i.test(message)
-          ? "HUIDU rejected the game-catalog request (error 1004: Invalid hash code). The provider must confirm the catalog API authentication or issue valid API access."
-        : /HUIDU/i.test(message)
-          ? "Games are temporarily unavailable. Please check the HUIDU API configuration and try again."
-          : "Games are temporarily unavailable. Please try again later.";
-    } finally {
-      gamesLoading.value = false;
-      gamesLoadPromise = undefined;
+  games.value = [];
+  gameCatalogPage.value = 0;
+  gameCatalogPageCount.value = 0;
+  gameCatalogTotal.value = 0;
+  const parameters = new URLSearchParams({
+    page: "1",
+    category: selectedCategory.value,
+    provider: selectedProvider.value,
+    search: query.value.trim(),
+    sort: gameSort.value,
+  });
+  try {
+    const data = await api(`/api/games?${parameters.toString()}`);
+    if (requestId !== gamesRequestId) return;
+    games.value = Array.isArray(data.games) ? data.games : [];
+    gameCatalogPage.value = Number.isInteger(data.page) ? data.page : 1;
+    gameCatalogPageCount.value = Number.isInteger(data.pageCount) ? data.pageCount : (games.value.length ? 1 : 0);
+    gameCatalogTotal.value = Number.isFinite(data.total) ? data.total : games.value.length;
+    gameCatalogProviders.value = Array.isArray(data.providers) ? data.providers : [];
+    gameCatalogCategories.value = Array.isArray(data.categories) ? data.categories : [];
+  } catch (error) {
+    if (requestId === gamesRequestId) {
+      gamesError.value = error instanceof Error ? error.message : "Games are temporarily unavailable. Please try again later.";
     }
-  })();
-  return gamesLoadPromise;
+  } finally {
+    if (requestId === gamesRequestId) gamesLoading.value = false;
+  }
 }
-function displayNextGamesBatch(): void {
+async function displayNextGamesBatch(): Promise<void> {
   if (gamesLoading.value || gamesError.value || !hasMoreGames.value) return;
+  const requestId = gamesRequestId;
+  const nextPage = gameCatalogPage.value + 1;
   gamesLoading.value = true;
-  window.setTimeout(() => {
-    displayedGameCount.value = Math.min(
-      displayedGameCount.value + gamesBatchSize,
-      filteredGames.value.length,
-    );
-    gamesLoading.value = false;
-  }, 180);
+  const parameters = new URLSearchParams({
+    page: String(nextPage),
+    category: selectedCategory.value,
+    provider: selectedProvider.value,
+    search: query.value.trim(),
+    sort: gameSort.value,
+  });
+  try {
+    const data = await api(`/api/games?${parameters.toString()}`);
+    if (requestId !== gamesRequestId) return;
+    const seen = new Set(games.value.map((game) => game.id));
+    const nextGames = Array.isArray(data.games) ? data.games as Game[] : [];
+    games.value = [...games.value, ...nextGames.filter((game) => !seen.has(game.id))];
+    gameCatalogPage.value = Number.isInteger(data.page) ? data.page : nextPage;
+    gameCatalogPageCount.value = Number.isInteger(data.pageCount) ? data.pageCount : gameCatalogPage.value;
+    gameCatalogTotal.value = Number.isFinite(data.total) ? data.total : games.value.length;
+  } catch (error) {
+    if (requestId === gamesRequestId) gamesError.value = error instanceof Error ? error.message : "Could not load more games.";
+  } finally {
+    if (requestId === gamesRequestId) gamesLoading.value = false;
+  }
 }
 async function loadPromotions(): Promise<void> {
   if (!signedIn.value) return;

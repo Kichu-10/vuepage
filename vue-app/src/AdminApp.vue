@@ -59,6 +59,100 @@
     </section>
     </section>
 
+    <section v-if="tab === 'games'" class="panel game-management-panel">
+      <div class="panel-heading">
+        <div><h2>Game and Provider Management</h2><p>Only enabled games from enabled providers are published in the Games lobby.</p></div>
+        <span class="provider-api-status" :class="{ configured: providerApiConfigured }">{{ providerApiConfigured ? "Provider API configured" : "Provider API not configured" }}</span>
+      </div>
+      <div class="stats-grid game-stats-grid">
+        <article class="stat-card"><div><span>Total providers</span><strong>{{ gameStats.totalProviders }}</strong></div></article>
+        <article class="stat-card"><div><span>Total available games</span><strong>{{ gameStats.availableGames }}</strong></div></article>
+        <article class="stat-card"><div><span>Active games</span><strong>{{ gameStats.activeGames }}</strong></div></article>
+        <article class="stat-card"><div><span>Disabled games</span><strong>{{ gameStats.disabledGames }}</strong></div></article>
+      </div>
+
+      <section class="game-management-block">
+        <div class="panel-heading">
+          <div><h3>Providers</h3><p>Provider API credentials are read from server environment variables and are never returned to the browser.</p></div>
+          <button type="button" class="secondary" :disabled="providerCatalogLoading" @click="loadProviderSources">{{ providerCatalogLoading ? "Loading…" : "Add Provider" }}</button>
+        </div>
+        <div v-if="providerSources.length" class="toolbar game-provider-add">
+          <select v-model="newProviderCode" aria-label="Available provider">
+            <option value="">Select an available provider</option>
+            <option v-for="source in availableProviderSources" :key="source.code" :value="source.code">{{ source.name }} ({{ source.code }})</option>
+          </select>
+          <input v-model="newProviderName" maxlength="120" placeholder="Display name (optional)" aria-label="Provider display name" />
+          <button type="button" :disabled="!newProviderCode" @click="addGameProvider">Add provider</button>
+        </div>
+        <div v-for="provider in managedProviders" :key="provider.code" class="game-provider-row">
+          <div><strong>{{ provider.code }}</strong><small>{{ provider.gameCount }} managed games</small></div>
+          <input v-model="provider.name" maxlength="120" :aria-label="`${provider.code} display name`" />
+          <label class="game-enabled-control"><input v-model="provider.enabled" type="checkbox" /> Enabled</label>
+          <button type="button" class="secondary" @click="saveGameProvider(provider)">Save</button>
+        </div>
+        <p v-if="managedProviders.length === 0" class="empty">No providers added. Load the available HUIDU providers to add one.</p>
+      </section>
+
+      <section class="game-management-block">
+        <div class="panel-heading">
+          <div><h3>Add Game</h3><p>Games are imported from their provider and start disabled until explicitly published.</p></div>
+          <button type="button" class="secondary" :disabled="!managedProviders.length || providerGamesLoading" @click="loadProviderGames">{{ providerGamesLoading ? "Loading…" : "Load provider games" }}</button>
+        </div>
+        <div class="toolbar game-provider-add">
+          <select v-model="importProviderCode" aria-label="Provider for imported games" @change="providerCatalogGames = []">
+            <option value="">Choose provider</option>
+            <option v-for="provider in managedProviders" :key="provider.code" :value="provider.code">{{ provider.name }}</option>
+          </select>
+          <select v-model="importGameId" aria-label="Game to add">
+            <option value="">Choose provider game</option>
+            <option v-for="game in providerCatalogGames" :key="game.id" :value="game.id">{{ game.name }} ({{ game.id }})</option>
+          </select>
+          <input v-model="importCategory" maxlength="80" placeholder="Category (optional)" aria-label="Game category" />
+          <input v-model="importThumbnail" maxlength="500" placeholder="Thumbnail HTTPS URL (optional)" aria-label="Game thumbnail URL" />
+          <input v-model.number="importSortOrder" type="number" placeholder="Display order" aria-label="Display order" />
+          <button type="button" :disabled="!importProviderCode || !importGameId" @click="importGame">Add Game</button>
+        </div>
+      </section>
+
+      <section class="game-management-block">
+        <div class="panel-heading">
+          <div><h3>Public Catalog</h3><p>Choose the exact number of games returned per page; users can scroll through further pages.</p></div>
+          <form class="catalog-page-size" @submit.prevent="saveCatalogPageSize">
+            <label>Games per page<input v-model.number="catalogPageSize" type="number" min="1" max="100" /></label>
+            <button type="submit" class="secondary">Save</button>
+          </form>
+        </div>
+        <div class="toolbar game-management-filters">
+          <input v-model="managedGameSearch" type="search" placeholder="Search managed games" aria-label="Search games" />
+          <select v-model="managedProviderFilter" aria-label="Filter by provider">
+            <option value="">All providers</option>
+            <option v-for="provider in managedProviders" :key="provider.code" :value="provider.code">{{ provider.name }}</option>
+          </select>
+          <select v-model="managedCategoryFilter" aria-label="Filter by category">
+            <option value="">All categories</option>
+            <option v-for="category in managedCategories" :key="category" :value="category">{{ category }}</option>
+          </select>
+        </div>
+        <p v-if="gameManagementMessage" class="form-message" role="status">{{ gameManagementMessage }}</p>
+        <div class="game-management-table-wrap">
+          <table class="game-management-table">
+            <thead><tr><th>Game</th><th>Provider</th><th>Category</th><th>Display order</th><th>Listing</th><th>Actions</th></tr></thead>
+            <tbody>
+              <tr v-for="game in filteredManagedGames" :key="game.id">
+                <td><input v-model="game.name" maxlength="160" :aria-label="`${game.name} name`" /><input v-model="game.thumbnail" maxlength="500" placeholder="Thumbnail URL" :aria-label="`${game.name} thumbnail`" /></td>
+                <td>{{ game.provider }}<small>{{ game.providerCode }}</small></td>
+                <td><input v-model="game.category" maxlength="80" aria-label="Game category" /></td>
+                <td><input v-model.number="game.sortOrder" type="number" aria-label="Game display order" /></td>
+                <td><label class="game-enabled-control"><input v-model="game.enabled" type="checkbox" :disabled="game.providerStatus !== 0" /> {{ game.enabled ? "Enabled" : "Disabled" }}</label></td>
+                <td class="game-actions"><button type="button" class="secondary" @click="saveManagedGame(game)">Save</button><button type="button" class="reject" @click="removeManagedGame(game)">Remove</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-if="filteredManagedGames.length === 0" class="empty">No managed games match these filters.</p>
+      </section>
+    </section>
+
     <section v-if="tab === 'users'" class="panel">
       <h2>Users</h2>
       <div class="toolbar">
@@ -245,6 +339,13 @@ type Transaction = { id: string; username: string; type: string; amount: number;
 type AuditLog = { id: string; action: string; target: string; details: string; createdAt: string };
 type SupportTicket = { id: string; username: string; subject: string; message: string; status: string; reply: string; createdAt: string; updatedAt: string };
 type Promotion = { id: string; title: string; description: string; reward: string; terms: string; active: boolean; bannerImage: string; bannerIncludesText: boolean };
+type ManagedProvider = { code: string; name: string; enabled: boolean; gameCount: number };
+type ManagedGame = {
+  id: string; providerCode: string; provider: string; providerEnabled: boolean; externalId: string; name: string;
+  thumbnail: string; category: string; gameType: string; sortOrder: number; enabled: boolean; providerStatus: number;
+};
+type ProviderSource = { code: string; name: string };
+type ProviderCatalogGame = { id: string; name: string; gameType: string; status: number };
 
 const session = useSessionStore();
 const token = toRef(session, "adminToken");
@@ -253,7 +354,7 @@ const username = ref("");
 const password = ref("");
 const loading = ref(false);
 const error = ref("");
-const tab = ref<"overview" | "users" | "kyc" | "transactions" | "results" | "activity" | "support" | "promotions" | "settings">("overview");
+const tab = ref<"overview" | "games" | "users" | "kyc" | "transactions" | "results" | "activity" | "support" | "promotions" | "settings">("overview");
 const stats = ref({ totalUsers: 0, activeUsers: 0, totalBalance: 0, pendingRequests: 0, indiaUsers: 0, pakistanUsers: 0, pendingKyc: 0, approvedDeposits: 0, approvedWithdrawals: 0 });
 const users = ref<Account[]>([]);
 const transactions = ref<Transaction[]>([]);
@@ -273,6 +374,36 @@ const resultLoading = ref(false);
 const resultMessage = ref("");
 const lastRefreshTime = ref("just now");
 const supportTickets = ref<SupportTicket[]>([]);
+const managedProviders = ref<ManagedProvider[]>([]);
+const managedGames = ref<ManagedGame[]>([]);
+const gameStats = ref({ totalProviders: 0, totalGames: 0, availableGames: 0, activeGames: 0, disabledGames: 0 });
+const catalogPageSize = ref(24);
+const providerApiConfigured = ref(false);
+const providerSources = ref<ProviderSource[]>([]);
+const providerCatalogLoading = ref(false);
+const newProviderCode = ref("");
+const newProviderName = ref("");
+const importProviderCode = ref("");
+const providerCatalogGames = ref<ProviderCatalogGame[]>([]);
+const providerGamesLoading = ref(false);
+const importGameId = ref("");
+const importCategory = ref("");
+const importThumbnail = ref("");
+const importSortOrder = ref(0);
+const managedGameSearch = ref("");
+const managedProviderFilter = ref("");
+const managedCategoryFilter = ref("");
+const gameManagementMessage = ref("");
+const availableProviderSources = computed(() => providerSources.value.filter(
+  (source) => !managedProviders.value.some((provider) => provider.code === source.code),
+));
+const filteredManagedGames = computed(() => managedGames.value.filter((game) => {
+  const search = managedGameSearch.value.trim().toLowerCase();
+  return (!search || `${game.name} ${game.provider} ${game.category}`.toLowerCase().includes(search))
+    && (!managedProviderFilter.value || game.providerCode === managedProviderFilter.value)
+    && (!managedCategoryFilter.value || game.category === managedCategoryFilter.value);
+}));
+const managedCategories = computed(() => [...new Set(managedGames.value.map((game) => game.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
 const openTicketCount = computed(() => supportTickets.value.filter((ticket) => ticket.status !== "resolved").length);
 const platformSettings = ref({ announcement: "", maintenanceMode: false, supportEmail: "", supportPhone: "", supportHours: "24/7", promotions: [] as Promotion[] });
 const settingsMessage = ref("");
@@ -299,6 +430,7 @@ const filteredTransactions = computed(() => {
 });
 const pageTitle = computed(() => ({
   overview: "Operations Overview",
+  games: "Game and Provider Management",
   users: "User Management",
   kyc: "KYC Verification",
   transactions: "Transactions",
@@ -310,9 +442,10 @@ const pageTitle = computed(() => ({
 }[tab.value]));
 
 function selectTab(value: string) {
-  const allowedTabs = ["overview", "users", "kyc", "transactions", "results", "activity", "support", "promotions", "settings"] as const;
+  const allowedTabs = ["overview", "games", "users", "kyc", "transactions", "results", "activity", "support", "promotions", "settings"] as const;
   if (allowedTabs.includes(value as (typeof allowedTabs)[number])) {
     tab.value = value as (typeof allowedTabs)[number];
+    if (tab.value === "games") void loadGameManagement();
   }
 }
 
@@ -396,6 +529,148 @@ async function api(path: string, options: RequestInit = {}) {
   return data;
 }
 
+async function loadGameManagement() {
+  try {
+    const data = await api("/api/admin/game-management");
+    managedProviders.value = data.providers;
+    managedGames.value = data.games;
+    gameStats.value = data.stats;
+    catalogPageSize.value = data.pageSize;
+    providerApiConfigured.value = data.providerApiConfigured;
+    gameManagementMessage.value = "";
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not load game management";
+  }
+}
+
+async function loadProviderSources() {
+  providerCatalogLoading.value = true;
+  gameManagementMessage.value = "";
+  try {
+    const data = await api("/api/admin/game-management/provider-catalog");
+    providerSources.value = data.providers;
+    providerApiConfigured.value = data.providerApiConfigured;
+    if (availableProviderSources.value.length === 0) gameManagementMessage.value = "No new providers are currently available from HUIDU.";
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not load available providers";
+  } finally {
+    providerCatalogLoading.value = false;
+  }
+}
+
+async function addGameProvider() {
+  try {
+    await api("/api/admin/game-management/providers", {
+      method: "POST",
+      body: JSON.stringify({ code: newProviderCode.value, name: newProviderName.value || undefined }),
+    });
+    newProviderCode.value = "";
+    newProviderName.value = "";
+    await loadGameManagement();
+    gameManagementMessage.value = "Provider added disabled. Enable it when its games are ready to publish.";
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not add provider";
+  }
+}
+
+async function saveGameProvider(provider: ManagedProvider) {
+  try {
+    await api(`/api/admin/game-management/providers/${encodeURIComponent(provider.code)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: provider.name, enabled: provider.enabled }),
+    });
+    await loadGameManagement();
+    gameManagementMessage.value = "Provider settings saved.";
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not save provider";
+  }
+}
+
+async function loadProviderGames() {
+  if (!importProviderCode.value) {
+    gameManagementMessage.value = "Choose a provider first.";
+    return;
+  }
+  providerGamesLoading.value = true;
+  gameManagementMessage.value = "";
+  importGameId.value = "";
+  try {
+    const data = await api(`/api/admin/game-management/providers/${encodeURIComponent(importProviderCode.value)}/catalog`);
+    providerCatalogGames.value = data.games;
+    if (data.games.length === 0) gameManagementMessage.value = "This provider has no games available to import.";
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not load provider games";
+  } finally {
+    providerGamesLoading.value = false;
+  }
+}
+
+async function importGame() {
+  try {
+    await api("/api/admin/game-management/games", {
+      method: "POST",
+      body: JSON.stringify({
+        providerCode: importProviderCode.value,
+        externalId: importGameId.value,
+        category: importCategory.value,
+        thumbnail: importThumbnail.value,
+        sortOrder: Number(importSortOrder.value),
+      }),
+    });
+    importGameId.value = "";
+    importCategory.value = "";
+    importThumbnail.value = "";
+    importSortOrder.value = 0;
+    await loadGameManagement();
+    gameManagementMessage.value = "Game added disabled. Enable it in the table when ready to publish.";
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not add game";
+  }
+}
+
+async function saveManagedGame(game: ManagedGame) {
+  try {
+    await api(`/api/admin/game-management/games/${encodeURIComponent(game.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: game.name,
+        thumbnail: game.thumbnail,
+        category: game.category,
+        sortOrder: Number(game.sortOrder),
+        enabled: game.enabled,
+      }),
+    });
+    await loadGameManagement();
+    gameManagementMessage.value = "Game settings saved.";
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not save game";
+  }
+}
+
+async function removeManagedGame(game: ManagedGame) {
+  if (!window.confirm(`Remove ${game.name} from the public game listing? Its provider record will be kept.`)) return;
+  try {
+    await api(`/api/admin/game-management/games/${encodeURIComponent(game.id)}`, { method: "DELETE" });
+    await loadGameManagement();
+    gameManagementMessage.value = "Game disabled from the public listing; its provider record was retained.";
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not remove game";
+  }
+}
+
+async function saveCatalogPageSize() {
+  try {
+    const data = await api("/api/admin/game-management/catalog-settings", {
+      method: "PATCH",
+      body: JSON.stringify({ pageSize: Number(catalogPageSize.value) }),
+    });
+    catalogPageSize.value = data.pageSize;
+    gameManagementMessage.value = `Public catalog page size set to ${data.pageSize} games.`;
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not update catalog page size";
+  }
+}
+
 async function login() {
   loading.value = true;
   error.value = "";
@@ -409,6 +684,7 @@ async function login() {
     signedIn.value = true;
     password.value = "";
     await refresh();
+    await loadGameManagement();
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "Login failed";
   } finally {
@@ -595,6 +871,7 @@ function exportTransactions() {
 onMounted(() => {
   if (signedIn.value) {
     refresh();
+    void loadGameManagement();
     refreshTimer = window.setInterval(refresh, 30000);
   }
 });
@@ -783,6 +1060,37 @@ body { margin: 0; }
 .promotion-admin-card .promotion-banner-upload { grid-column: 1 / -1; }
 .promotion-banner-upload img { width: min(100%, 520px); max-height: 220px; border-radius: 10px; object-fit: cover; }
 .promotion-admin-card .switch-row { flex-direction: row; }
+.game-management-panel { display: grid; gap: 18px; }
+.game-management-panel > .panel-heading { gap: 12px; }
+.game-management-panel h3 { margin: 0; color: #344a3c; font-size: 15px; }
+.provider-api-status { padding: 7px 10px; border-radius: 99px; color: #975e15; background: #fff5e7; font-size: 10px; font-weight: 750; white-space: nowrap; }
+.provider-api-status.configured { color: #087b4b; background: #eaf8f1; }
+.game-stats-grid { margin-top: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.game-stats-grid .stat-card { min-height: 92px; }
+.game-management-block { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid #e8eeea; }
+.game-provider-add { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 0; }
+.game-provider-add input, .game-provider-add select, .game-management-filters input, .game-management-filters select { min-width: 0; height: 40px; padding: 0 10px; border: 1px solid #e1e8e4; border-radius: 8px; background: #fff; font: inherit; }
+.game-provider-add button { min-height: 40px; padding: 0 14px; border: 0; border-radius: 8px; color: #fff; background: #087b4b; font-size: 11px; font-weight: 750; }
+.game-provider-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(140px, 2fr) auto auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid #edf1ef; border-radius: 10px; }
+.game-provider-row > div { display: grid; gap: 3px; }
+.game-provider-row small, .game-management-table td small { display: block; color: #8d9992; font-size: 10px; }
+.game-provider-row > input, .game-management-table input { width: 100%; min-width: 80px; height: 36px; padding: 0 8px; border: 1px solid #e1e8e4; border-radius: 7px; background: white; font: inherit; }
+.game-enabled-control { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; color: #5a685f; font-size: 11px; }
+.game-enabled-control input { width: 16px; height: 16px; }
+.catalog-page-size { display: flex; align-items: end; gap: 8px; }
+.catalog-page-size label { display: grid; gap: 4px; color: #637168; font-size: 10px; }
+.catalog-page-size input { width: 100px; height: 36px; padding: 0 8px; border: 1px solid #e1e8e4; border-radius: 7px; }
+.catalog-page-size button { height: 36px; }
+.game-management-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 0; }
+.game-management-table-wrap { overflow-x: auto; border: 1px solid #edf1ef; border-radius: 10px; }
+.game-management-table { width: 100%; min-width: 760px; border-collapse: collapse; text-align: left; }
+.game-management-table th { padding: 10px; color: #87948b; background: #f8faf9; font-size: 10px; text-transform: uppercase; }
+.game-management-table td { padding: 9px; border-top: 1px solid #edf1ef; vertical-align: middle; font-size: 11px; }
+.game-management-table td:first-child { width: 30%; }
+.game-management-table td:first-child input + input { margin-top: 5px; }
+.game-actions { display: flex; gap: 6px; }
+.game-actions button, .game-provider-row button { min-height: 34px; padding: 0 9px; font-size: 10px; }
+.game-management-panel .form-message { color: #087b4b; }
 .google-config-note { margin: 12px 0 0; color: #77847c; font-size: 11px; line-height: 1.6; }
 .google-config-note code { overflow-wrap: anywhere; }
 .switch-row { flex-direction: row !important; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid #edf1ef; border-radius: 10px; }
@@ -800,6 +1108,7 @@ body { margin: 0; }
   .side-nav button b { position: absolute; margin: -24px 0 0 28px; display: grid; font-size: 9px; }
   .sidebar-user { display: flex; justify-content: center; }
   .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .game-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 700px) {
   .admin-login { grid-template-columns: 1fr; }
@@ -823,6 +1132,9 @@ body { margin: 0; }
   .stat-card .stat-icon { width: 36px; height: 36px; }
   .stat-card strong { font-size: 18px; }
   .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .game-provider-row { grid-template-columns: 1fr 1fr; }
+  .game-provider-add, .game-management-filters { grid-template-columns: 1fr; }
+  .game-management-panel > .panel-heading { align-items: flex-start; flex-direction: column; }
   .transaction-toolbar { grid-template-columns: 1fr !important; }
   .workspace { padding: 0 12px calc(84px + env(safe-area-inset-bottom)); }
   .workspace-header { height: 72px; margin-bottom: 0; }

@@ -6,6 +6,7 @@
     </div>
     <nav class="side-nav" aria-label="Admin navigation">
       <button :class="{ active: tab === 'overview' }" @click="$emit('select', 'overview')"><span>▦</span>Overview</button>
+      <button :class="{ active: tab === 'games' }" @click="$emit('select', 'games')"><span>🎮</span>Games</button>
       <button :class="{ active: tab === 'users' }" @click="$emit('select', 'users')"><span>♙</span>Users <b>{{ stats.totalUsers }}</b></button>
       <button :class="{ active: tab === 'kyc' }" @click="$emit('select', 'kyc')"><span>✓</span>KYC Review <b v-if="stats.pendingKyc">{{ stats.pendingKyc }}</b></button>
       <button :class="{ active: tab === 'transactions' }" @click="$emit('select', 'transactions')"><span>↔</span>Transactions <b v-if="stats.pendingRequests">{{ stats.pendingRequests }}</b></button>
