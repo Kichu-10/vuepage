@@ -64,24 +64,6 @@
         <div class="jackpot-value">{{ jackpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
       </section>
 
-      <nav class="categories" aria-label="Game categories">
-        <button class="category-arrow" aria-label="Scroll categories left" @click="scrollCategories(-1)"><ChevronLeft :size="22" /></button>
-        <div ref="homeCategoryList" class="category-list">
-          <button
-            v-for="category in gameCategories"
-            :key="category.label"
-            class="category"
-            :class="{ selected: category.label === selectedCategory }"
-            :aria-pressed="category.label === selectedCategory"
-            @click="selectCategory(category.label)"
-          >
-            <span class="category-icon"><img :src="category.image" :alt="category.label" class="category-image" /></span>
-            <span class="category-label">{{ category.label }}</span>
-          </button>
-        </div>
-        <button class="category-arrow" aria-label="Scroll categories right" @click="scrollCategories(1)"><ChevronRight :size="22" /></button>
-      </nav>
-
       <section class="announcement" aria-label="Latest announcement">
         <Volume2 class="announcement-volume" :size="20" :stroke-width="2.6" />
         <p>{{ platformAnnouncement }}</p>
@@ -90,6 +72,116 @@
           <span v-if="unreadCount > 0" class="inbox-badge">{{ unreadCount > 99 ? "99+" : unreadCount }}</span>
         </button>
       </section>
+
+      <nav class="categories" aria-label="Game categories">
+        <button class="category-arrow" aria-label="Scroll categories left" @click="scrollCategories(-1)"><ChevronLeft :size="22" /></button>
+        <div ref="homeCategoryList" class="category-list">
+          <button
+            v-for="category in homeCategoryItems"
+            :key="category.label"
+            type="button"
+            class="category"
+            :class="{ selected: homeSelectedCategory === category.label }"
+            :aria-pressed="homeSelectedCategory === category.label"
+            @click="selectHomeCategory(category.label)"
+          >
+            <span class="category-icon"><img :src="category.image" :alt="category.label" class="category-image" /></span>
+            <span class="category-label">{{ category.label }}</span>
+          </button>
+        </div>
+        <button class="category-arrow" aria-label="Scroll categories right" @click="scrollCategories(1)"><ChevronRight :size="22" /></button>
+      </nav>
+
+      <section class="game-category-sections home-game-sections" aria-label="Games by category">
+        <article
+          v-for="section in gameSections"
+          :id="homeSectionId(section.category)"
+          :key="section.category"
+          class="game-category-section"
+        >
+          <header class="game-category-heading home-game-category-heading">
+            <h2>
+              <component :is="homeSectionIcon(section.category)" :size="21" aria-hidden="true" />
+              {{ section.title }}
+            </h2>
+            <div class="home-game-category-actions">
+              <button
+                type="button"
+                class="home-category-arrow"
+                :aria-label="`Previous ${section.title} games`"
+                @click="scrollHomeGameStrip(section.category, -1)"
+              ><ChevronLeft :size="19" /></button>
+              <button
+                type="button"
+                class="home-category-arrow"
+                :aria-label="`Next ${section.title} games`"
+                @click="scrollHomeGameStrip(section.category, 1)"
+              ><ChevronRight :size="19" /></button>
+              <button type="button" class="home-view-all" @click="showAllCategory(section.category)">
+                View All
+              </button>
+            </div>
+          </header>
+          <div v-if="section.loading && section.games.length === 0" class="home-game-strip home-game-skeletons" role="status" :aria-label="`Loading ${section.title}`">
+            <span v-for="index in 6" :key="index" class="home-game-skeleton"></span>
+          </div>
+          <div v-else-if="section.error" class="catalog-error" role="alert">
+            <p>{{ section.error }}</p>
+            <button type="button" @click="retryGameSection(section)">Try again</button>
+          </div>
+          <div
+            v-else-if="section.games.length"
+            :ref="(element) => setHomeGameStrip(section.category, element)"
+            class="home-game-strip"
+            :aria-label="section.title"
+          >
+            <article
+              v-for="game in section.games"
+              :key="game.id"
+              class="game-card home-game-card"
+              :class="{ 'game-unavailable': game.status !== 0, 'home-game-card-no-art': !game.thumbnail }"
+              role="button"
+              tabindex="0"
+              :aria-label="game.status === 0 ? `Play ${game.name}` : `${game.name} unavailable`"
+              :aria-disabled="game.status !== 0 || launchingGameId === game.id"
+              @click="play(game)"
+              @keydown.enter="play(game)"
+              @keydown.space.prevent="play(game)"
+            >
+              <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" />
+              <div class="game-shade" />
+              <span v-if="game.isPopular" class="home-popular-badge"><Flame :size="11" fill="currentColor" /> Hot</span>
+              <span class="game-name">{{ launchingGameId === game.id ? "Opening..." : game.name }}</span>
+              <span v-if="game.status !== 0" class="game-status">{{ game.status === 1 ? "Maintenance" : "Unavailable" }}</span>
+              <button
+                class="favorite-button"
+                :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'"
+                @click.stop="toggleFavorite(game.id)"
+              ><Star :size="17" :fill="favorites.includes(game.id) ? 'currentColor' : 'none'" /></button>
+            </article>
+          </div>
+          <p v-else class="empty-state">No active games are assigned to {{ section.title.toLowerCase() }}.</p>
+          <div
+            v-if="section.page > 0 && section.page < section.pageCount"
+            :ref="(element) => observeHomeSectionSentinel(section.category, element)"
+            class="home-section-load-sentinel"
+            :data-game-category="section.category"
+            aria-hidden="true"
+          ></div>
+          <div v-if="section.loading && section.games.length > 0" class="home-section-loading" role="status">
+            <span class="loading-spinner" aria-hidden="true"></span>
+            <span>Loading more games…</span>
+          </div>
+        </article>
+      </section>
+
+      <button
+        v-if="showBackToTop"
+        type="button"
+        class="home-back-to-top"
+        aria-label="Back to top"
+        @click="scrollHomeToTop"
+      ><ArrowUp :size="21" /></button>
 
       </template>
 
