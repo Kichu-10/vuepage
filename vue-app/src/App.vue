@@ -1455,12 +1455,10 @@ function changeBannerSlide(index: number): void {
 }
 function toggleGameSearch(): void {
   if (route.path !== "/games") {
-    navigateTo("/games");
-    searchOpen.value = true;
+    void navigateTo("/games").then(() => nextTick(() => gameLobbySearchInput.value?.focus()));
     return;
   }
-  searchOpen.value = !searchOpen.value;
-  if (!searchOpen.value) query.value = "";
+  gameLobbySearchInput.value?.focus();
 }
 async function refreshGameWallet(): Promise<boolean> {
   if (!signedIn.value) return false;
@@ -1506,30 +1504,93 @@ function selectCategory(category: string): void {
 }
 function showAllCategory(category: string): void {
   const categoryChanged = selectedCategory.value !== category;
+  gameLobbyTab.value = "all";
   selectedCategory.value = category;
-  selectedProvider.value = "";
   query.value = "";
   gameSort.value = "popular";
   showAllGames.value = true;
+  if (route.path !== "/games") {
+    void navigateTo("/games");
+    return;
+  }
   if (!categoryChanged) void loadGames();
 }
-function returnToGameSections(): void {
-  showAllGames.value = false;
-  query.value = "";
-  selectedProvider.value = "";
-  selectedCategory.value = "Popular";
-  gameSort.value = "popular";
-  void loadGameSections();
+function selectGameLobbyTab(tab: GameLobbyTab): void {
+  gameLobbyTab.value = tab;
+  if (tab === "all") {
+    showAllGames.value = false;
+    selectedCategory.value = "Popular";
+    resetGameSections();
+    void loadGameSections();
+  } else if (tab === "hot") {
+    showAllGames.value = true;
+    selectedCategory.value = "Popular";
+  } else {
+    showAllGames.value = false;
+  }
+}
+function selectGameProvider(providerCode: string): void {
+  selectedProvider.value = providerCode;
+}
+function providerInitials(providerName: string): string {
+  return providerName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join("");
+}
+function homeSectionId(category: string): string {
+  return `home-games-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+}
+function homeSectionIcon(category: string): typeof Flame {
+  return homeSectionIcons[category] || Gamepad2;
+}
+function selectHomeCategory(category: string): void {
+  const item = homeCategoryItems.find((candidate) => candidate.label === category);
+  if (!item) return;
+  homeSelectedCategory.value = category;
+  document.getElementById(homeSectionId(item.section))?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function scrollCategories(direction: number): void {
   const list = homeCategoryList.value;
-  const buttons = list ? Array.from(list.querySelectorAll<HTMLButtonElement>(".category")) : [];
-  if (buttons.length === 0) return;
-  const selectedIndex = buttons.findIndex((button) => button.getAttribute("aria-pressed") === "true");
+  if (!list) return;
+  const selectedIndex = homeCategoryItems.findIndex((category) => category.label === homeSelectedCategory.value);
   const currentIndex = selectedIndex < 0 ? 0 : selectedIndex;
-  const nextIndex = (currentIndex + direction + buttons.length) % buttons.length;
-  selectCategory(gameCategories[nextIndex].label);
-  buttons[nextIndex].scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  const nextIndex = (currentIndex + direction + homeCategoryItems.length) % homeCategoryItems.length;
+  selectHomeCategory(homeCategoryItems[nextIndex].label);
+  list.querySelectorAll<HTMLButtonElement>(".category")[nextIndex]?.scrollIntoView({
+    behavior: "smooth",
+    block: "nearest",
+    inline: "center",
+  });
+}
+function setHomeGameStrip(category: string, element: Element | ComponentPublicInstance | null): void {
+  if (element instanceof HTMLElement) homeGameStrips.set(category, element);
+  else homeGameStrips.delete(category);
+}
+function scrollHomeGameStrip(category: string, direction: number): void {
+  const strip = homeGameStrips.get(category);
+  if (!strip) return;
+  strip.scrollBy({ left: Math.max(strip.clientWidth * 0.85, 180) * direction, behavior: "smooth" });
+}
+function observeHomeSectionSentinel(category: string, element: Element | ComponentPublicInstance | null): void {
+  const previous = homeSectionSentinels.get(category);
+  const target = element instanceof Element ? element : null;
+  if (previous && previous !== target) homeSectionObserver?.unobserve(previous);
+  if (!target) {
+    homeSectionSentinels.delete(category);
+    return;
+  }
+  target.setAttribute("data-game-category", category);
+  homeSectionSentinels.set(category, target);
+  homeSectionObserver?.observe(target);
+}
+function handleHomeScroll(): void {
+  showBackToTop.value = window.scrollY > 420;
+}
+function scrollHomeToTop(): void {
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function toggleFavorite(id: string): void {
   favorites.value = favorites.value.includes(id)
