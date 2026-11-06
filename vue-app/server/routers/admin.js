@@ -109,9 +109,18 @@ const gameUpdateSchema = z.object({
   isPopular: z.boolean().optional(),
   enabled: z.boolean().optional(),
 }).refine((value) => Object.keys(value).length > 0, "Provide game changes");
+const bulkGameEnabledSchema = z.object({
+  gameIds: z.array(z.string().trim().min(1).max(120)).min(1).max(500)
+    .refine((ids) => new Set(ids).size === ids.length, "Game IDs must be unique"),
+  enabled: z.boolean(),
+});
 const catalogSettingsSchema = z.object({
   pageSize: z.number().int().min(1).max(100),
 });
+
+function normalizedGameName(name) {
+  return String(name).normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
 
 function recordGameManagementAudit(adminUserId, action, target, details) {
   const admin = db.prepare("SELECT username FROM users WHERE id = ?").get(adminUserId);
@@ -389,6 +398,88 @@ export function createAdminRouter(uploadDir) {
         return res.status(409).json({ error: "This game or a game with the same name is already managed" });
       }
       catalogFailure(res, error, "Could not add game");
+    }
+  });
+
+  router.post("/game-management/games/bulk", validate(bulkGameImportSchema), async (req, res) => {
+    const provider = getManagedProvider(req.body.providerCode);
+    if (!provider) return res.status(404).json({ error: "Add this provider before importing its games" });
+    try {
+      const sourceGames = await listGamesFromProviderCode(provider.code);
+      const sourceGamesById = new Map(sourceGames.map((game) => [game.id, game]));
+      const missingGames = req.body.externalIds.filter((id) => !sourceGamesById.has(id));
+      if (missingGames.length) return res.status(400).json({ error: "One or more selected games are not available from this provider" });
+
+      const existingGames = listManagedGames();
+      const existingIds = new Set(existingGames.map((game) => game.id));
+      const existingNames = new Set(existingGames.map((game) => normalizedGameName(game.name)));
+      const candidates = [];
+      const skippedGames = [];
+      for (const id of req.body.externalIds) {
+        const game = sourceGamesById.get(id);
+        if (game.status !== 0) {
+          skippedGames.push({ id, name: game.name, reason: "unavailable" });
+        } else if (existingIds.has(id)) {
+          skippedGames.push({ id, name: game.name, reason: "already managed" });
+        } else if (existingNames.has(normalizedGameName(game.name))) {
+          skippedGames.push({ id, name: game.name, reason: "duplicate game name" });
+        } else {
+          existingIds.add(id);
+          existingNames.add(normalizedGameName(game.name));
+          candidates.push(game);
+        }
+      }
+
+      const admin = db.prepare("SELECT username FROM users WHERE id = ?").get(req.user.id);
+      const maxSortOrder = db.prepare("SELECT MAX(sort_order) AS value FROM managed_games WHERE provider_code = ?")
+        .get(provider.code)?.value;
+      let sortOrder = Number.isInteger(maxSortOrder) ? maxSortOrder : -1;
+      const insertAudit = db.prepare(`
+        INSERT INTO audit_logs (id, admin_username, action, target, details, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        for (const game of candidates) {
+          const type = game.gameType.toLowerCase();
+          addManagedGame({
+            providerCode: provider.code,
+            externalId: game.id,
+            name: game.name,
+            category: type.includes("fish") ? "Fishing" : type.includes("slot") ? "Slots" : "Mini Games",
+            gameType: game.gameType,
+            sortOrder: ++sortOrder,
+            enabled: false,
+            providerStatus: game.status,
+          });
+          insertAudit.run(
+            randomUUID(),
+            admin?.username || "admin",
+            "GAME_IMPORTED",
+            game.name,
+            `Bulk imported from ${provider.name}; disabled until explicitly enabled`,
+            new Date().toISOString(),
+          );
+        }
+        db.exec("DELETE FROM audit_logs WHERE id NOT IN (SELECT id FROM audit_logs ORDER BY created_at DESC, rowid DESC LIMIT 1000)");
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+
+      res.status(candidates.length ? 201 : 200).json({
+        importedCount: candidates.length,
+        skippedCount: skippedGames.length,
+        skippedGames,
+        games: candidates.map((game) => getManagedGame(game.id)),
+      });
+    } catch (error) {
+      if (String(error?.code || "").startsWith("ERR_SQLITE_CONSTRAINT") || String(error?.message || "").includes("constraint failed")) {
+        return res.status(409).json({ error: "One or more selected games are already managed" });
+      }
+      logger.error("admin_managed_games_bulk_import_failed", { providerCode: provider.code, error: error instanceof Error ? error.message : String(error) });
+      catalogFailure(res, error, "Could not import selected games");
     }
   });
 
