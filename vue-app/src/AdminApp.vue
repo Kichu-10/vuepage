@@ -1249,6 +1249,15 @@ body { margin: 0; }
 .game-stats-grid .stat-card { min-height: 92px; }
 .game-management-block { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid #e8eeea; }
 .game-provider-add { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 0; }
+.provider-game-selection { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding-top: 12px; border-top: 1px solid #e8eeea; }
+.provider-game-list { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; max-height: 280px; overflow-y: auto; padding: 8px; border: 1px solid #edf1ef; border-radius: 8px; }
+.provider-game-option { display: flex; min-width: 0; align-items: center; gap: 7px; color: #526158; font-size: 11px; }
+.provider-game-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.provider-game-option small { flex: 0 0 auto; color: #8d9992; font-size: 9px; }
+.provider-game-option input, .provider-game-selection > label input { width: 16px; height: 16px; flex: 0 0 auto; }
+.provider-game-selection > span, .game-bulk-toolbar > span { color: #77847c; font-size: 11px; }
+.provider-game-selection > button, .game-bulk-toolbar > button { min-height: 36px; padding: 0 12px; border: 0; border-radius: 8px; color: white; background: #087b4b; font-size: 11px; font-weight: 750; }
+.provider-game-selection > button:disabled, .game-bulk-toolbar > button:disabled { cursor: not-allowed; opacity: .55; }
 .game-provider-add input, .game-provider-add select, .game-management-filters input, .game-management-filters select { min-width: 0; height: 40px; padding: 0 10px; border: 1px solid #e1e8e4; border-radius: 8px; background: #fff; font: inherit; }
 .game-provider-add input[type="file"], .game-management-table input[type="file"] { height: auto; min-height: 36px; padding: 6px; font-size: 10px; }
 .game-management-table select { width: 100%; min-width: 100px; height: 36px; padding: 0 7px; border: 1px solid #e1e8e4; border-radius: 7px; background: #fff; font: inherit; font-size: 11px; }
