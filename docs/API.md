@@ -106,6 +106,8 @@ All routes below require an administrator JWT, an active administrator account, 
 | `PATCH` | `/api/admin/game-management/catalog-settings` | Set public games per page (1–100) |
 | `GET` | `/uploads/:filename` | Retrieve an uploaded document; administrator authentication required |
 
+Bulk import accepts `{ "providerCode": "...", "externalIds": ["..."] }` with up to 500 unique game IDs. Only available games from the selected provider are imported; already-managed, duplicate-name, or unavailable games are reported as skipped. Imported games remain disabled. Bulk enable/disable accepts `{ "gameIds": ["..."], "enabled": true }` with up to 500 unique IDs; the request is rejected if a selected game is missing or an unavailable game would be enabled.
+
 HUIDU API credentials remain configured on the backend through server environment variables. Admin responses expose only whether the integration is configured; they never return agency IDs or encryption keys. Provider/game records and public selection state are persisted in SQLite.
 
 ## Error behavior
