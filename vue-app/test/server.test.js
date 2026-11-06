@@ -221,6 +221,9 @@ test("admin bulk game actions import only available games and toggle selected li
     await request(app).post("/api/admin/game-management/games/bulk").set(headers)
       .send({ providerCode: "pg", externalIds: ["game-1", "game-1"] })
       .expect(400);
+    await request(app).post("/api/admin/game-management/games/bulk").set(headers)
+      .send({ providerCode: "pg", externalIds: Array.from({ length: 501 }, (_, index) => `game-${index}`) })
+      .expect(400);
 
     database.addManagedGame({
       providerCode: "pg",
