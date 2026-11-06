@@ -705,6 +705,78 @@ async function loadProviderGames() {
   }
 }
 
+function toggleAllProviderGames(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked;
+  selectedProviderGameIds.value = checked
+    ? availableProviderCatalogGames.value.map((game) => game.id)
+    : [];
+}
+
+function toggleProviderGame(gameId: string, event: Event) {
+  const checked = (event.target as HTMLInputElement).checked;
+  selectedProviderGameIds.value = checked
+    ? [...selectedProviderGameIds.value, gameId]
+    : selectedProviderGameIds.value.filter((id) => id !== gameId);
+}
+
+async function importSelectedProviderGames() {
+  if (!importProviderCode.value || !selectedProviderGameIds.value.length) return;
+  providerGamesImporting.value = true;
+  gameManagementMessage.value = "";
+  try {
+    const data = await api("/api/admin/game-management/games/bulk", {
+      method: "POST",
+      body: JSON.stringify({
+        providerCode: importProviderCode.value,
+        externalIds: selectedProviderGameIds.value,
+      }),
+    });
+    selectedProviderGameIds.value = [];
+    await loadGameManagement();
+    await loadProviderGames();
+    gameManagementMessage.value = data.skippedCount
+      ? `Added ${data.importedCount} games disabled. Skipped ${data.skippedCount} unavailable or duplicate games.`
+      : `Added ${data.importedCount} games disabled. Enable them in the table when ready to publish.`;
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not add selected games";
+  } finally {
+    providerGamesImporting.value = false;
+  }
+}
+
+function toggleAllManagedGames(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked;
+  selectedManagedGameIds.value = checked
+    ? filteredManagedGames.value.map((game) => game.id)
+    : [];
+}
+
+function toggleManagedGame(gameId: string, event: Event) {
+  const checked = (event.target as HTMLInputElement).checked;
+  selectedManagedGameIds.value = checked
+    ? [...selectedManagedGameIds.value, gameId]
+    : selectedManagedGameIds.value.filter((id) => id !== gameId);
+}
+
+async function updateSelectedManagedGames(enabled: boolean) {
+  if (!selectedManagedGameIds.value.length) return;
+  bulkGamesUpdating.value = true;
+  gameManagementMessage.value = "";
+  try {
+    const data = await api("/api/admin/game-management/bulk-enabled", {
+      method: "PATCH",
+      body: JSON.stringify({ gameIds: selectedManagedGameIds.value, enabled }),
+    });
+    selectedManagedGameIds.value = [];
+    await loadGameManagement();
+    gameManagementMessage.value = `${data.updatedCount} selected games ${enabled ? "enabled" : "disabled"}.`;
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not update selected games";
+  } finally {
+    bulkGamesUpdating.value = false;
+  }
+}
+
 async function importGame() {
   let importedGameId = "";
   try {
