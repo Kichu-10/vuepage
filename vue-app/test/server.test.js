@@ -178,6 +178,80 @@ test("admin endpoints reject anonymous and regular-user requests", async () => {
     .expect(403);
 });
 
+test("admin bulk game actions import only available games and toggle selected listings", async () => {
+  const originalFetch = globalThis.fetch;
+  database.saveManagedProvider({ code: "pg", name: "PGSoft", enabled: true });
+  globalThis.fetch = async (url) => {
+    const requestUrl = new URL(String(url));
+    if (requestUrl.pathname === "/game/providers") {
+      return { ok: true, json: async () => ({
+        code: 0,
+        data: [{ code: "pg", name: "PGSoft", status: 1 }],
+      }) };
+    }
+    if (requestUrl.pathname === "/game/list") {
+      return { ok: true, json: async () => ({
+        code: 0,
+        data: [
+          { game_uid: "game-1", game_name: "Game One", game_type: "Slots", status: 1 },
+          { game_uid: "game-2", game_name: "Game Two", game_type: "Fishing", status: 1 },
+          { game_uid: "game-3", game_name: "Unavailable Game", game_type: "Slots", status: 0 },
+        ],
+      }) };
+    }
+    throw new Error(`Unexpected provider URL ${url}`);
+  };
+  try {
+    const headers = { Authorization: ["Bearer", tokenFor(admin)].join(" ") };
+    const imported = await request(app).post("/api/admin/game-management/games/bulk").set(headers)
+      .send({ providerCode: "pg", externalIds: ["game-1", "game-2", "game-3"] })
+      .expect(201);
+    assert.equal(imported.body.importedCount, 2);
+    assert.equal(imported.body.skippedCount, 1);
+    assert.equal(imported.body.skippedGames[0].reason, "unavailable");
+    assert.equal(database.getManagedGame("game-1").enabled, false);
+    assert.equal(database.getManagedGame("game-1").thumbnail, "");
+    assert.equal(database.getManagedGame("game-2").category, "Fishing");
+
+    const duplicate = await request(app).post("/api/admin/game-management/games/bulk").set(headers)
+      .send({ providerCode: "pg", externalIds: ["game-1"] })
+      .expect(200);
+    assert.equal(duplicate.body.importedCount, 0);
+    assert.equal(duplicate.body.skippedGames[0].reason, "already managed");
+    await request(app).post("/api/admin/game-management/games/bulk").set(headers)
+      .send({ providerCode: "pg", externalIds: ["game-1", "game-1"] })
+      .expect(400);
+
+    database.addManagedGame({
+      providerCode: "pg",
+      externalId: "game-4",
+      name: "Unavailable Managed Game",
+      providerStatus: 2,
+    });
+    const enabled = await request(app).patch("/api/admin/game-management/bulk-enabled").set(headers)
+      .send({ gameIds: ["game-1", "game-2"], enabled: true })
+      .expect(200);
+    assert.equal(enabled.body.updatedCount, 2);
+    assert.equal(database.getManagedGame("game-1").enabled, true);
+    assert.equal(database.getManagedGame("game-2").enabled, true);
+
+    await request(app).patch("/api/admin/game-management/bulk-enabled").set(headers)
+      .send({ gameIds: ["game-1", "game-4"], enabled: true })
+      .expect(409);
+    assert.equal(database.getManagedGame("game-1").enabled, true);
+    assert.equal(database.getManagedGame("game-4").enabled, false);
+
+    const disabled = await request(app).patch("/api/admin/game-management/bulk-enabled").set(headers)
+      .send({ gameIds: ["game-1", "game-2"], enabled: false })
+      .expect(200);
+    assert.equal(disabled.body.updatedCount, 2);
+    assert.equal(database.getManagedGame("game-1").enabled, false);
+    assert.equal(database.getManagedGame("game-2").enabled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("admin game management imports, publishes, paginates, and disables catalog entries", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
