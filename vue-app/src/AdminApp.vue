@@ -176,12 +176,31 @@
             <option v-for="category in gameCategories" :key="category" :value="category">{{ category }}</option>
           </select>
         </div>
+        <div class="game-bulk-toolbar">
+          <label class="game-enabled-control">
+            <input
+              type="checkbox"
+              :checked="allFilteredManagedGamesSelected"
+              :disabled="!filteredManagedGames.length || bulkGamesUpdating"
+              @change="toggleAllManagedGames"
+            />
+            Select all matching games ({{ filteredManagedGames.length }})
+          </label>
+          <span>{{ selectedManagedGameIds.length }} selected</span>
+          <button type="button" class="secondary" :disabled="!selectedManagedGameIds.length || bulkGamesUpdating" @click="updateSelectedManagedGames(true)">
+            Enable selected
+          </button>
+          <button type="button" class="secondary" :disabled="!selectedManagedGameIds.length || bulkGamesUpdating" @click="updateSelectedManagedGames(false)">
+            Disable selected
+          </button>
+        </div>
         <p v-if="gameManagementMessage" class="form-message" role="status">{{ gameManagementMessage }}</p>
         <div class="game-management-table-wrap">
           <table class="game-management-table">
-            <thead><tr><th>Game</th><th>Provider</th><th>Category</th><th>Popular</th><th>Display order</th><th>Listing</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Select</th><th>Game</th><th>Provider</th><th>Category</th><th>Popular</th><th>Display order</th><th>Listing</th><th>Actions</th></tr></thead>
             <tbody>
               <tr v-for="game in filteredManagedGames" :key="game.id">
+                <td><input type="checkbox" :checked="selectedManagedGameIds.includes(game.id)" :aria-label="`Select ${game.name}`" @change="toggleManagedGame(game.id, $event)" /></td>
                 <td>
                   <img v-if="game.thumbnail" class="managed-game-thumbnail" :src="game.thumbnail" :alt="`${game.name} logo or artwork`" />
                   <span v-else class="managed-game-no-thumbnail">No game logo uploaded</span>
@@ -385,7 +404,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, toRef } from "vue";
+import { computed, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 import { useSessionStore } from "./stores/session";
 import AdminSidebar from "./components/AdminSidebar.vue";
 
@@ -446,6 +465,8 @@ const newProviderName = ref("");
 const importProviderCode = ref("");
 const providerCatalogGames = ref<ProviderCatalogGame[]>([]);
 const providerGamesLoading = ref(false);
+const providerGamesImporting = ref(false);
+const selectedProviderGameIds = ref<string[]>([]);
 const importGameId = ref("");
 const importCategory = ref("Mini Games");
 const importIsPopular = ref(false);
