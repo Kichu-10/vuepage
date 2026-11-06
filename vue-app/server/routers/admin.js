@@ -92,6 +92,11 @@ const gameImportSchema = z.object({
   ),
   sortOrder: z.number().int().min(-100000).max(100000).optional().default(0),
 });
+const bulkGameImportSchema = z.object({
+  providerCode: providerCodeSchema,
+  externalIds: z.array(z.string().trim().min(1).max(120).regex(/^[a-zA-Z0-9_-]+$/)).min(1).max(500)
+    .refine((ids) => new Set(ids).size === ids.length, "Game IDs must be unique"),
+});
 const gameUpdateSchema = z.object({
   providerCode: providerCodeSchema.optional(),
   name: z.string().trim().min(1).max(160).optional(),
