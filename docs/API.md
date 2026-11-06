@@ -99,7 +99,9 @@ All routes below require an administrator JWT, an active administrator account, 
 | `PATCH` | `/api/admin/game-management/providers/:code` | Edit provider display name or enabled state |
 | `GET` | `/api/admin/game-management/providers/:code/catalog` | List games available from a managed provider |
 | `POST` | `/api/admin/game-management/games` | Import a game from its provider; imported games default to disabled |
+| `POST` | `/api/admin/game-management/games/bulk` | Import up to 500 selected available games from one provider; imported games default to disabled |
 | `PATCH` | `/api/admin/game-management/games/:id` | Edit game display metadata/order or enabled state |
+| `PATCH` | `/api/admin/game-management/bulk-enabled` | Enable or disable up to 500 selected managed games |
 | `DELETE` | `/api/admin/game-management/games/:id` | Disable a game from public listings without deleting its record |
 | `PATCH` | `/api/admin/game-management/catalog-settings` | Set public games per page (1–100) |
 | `GET` | `/uploads/:filename` | Retrieve an uploaded document; administrator authentication required |
