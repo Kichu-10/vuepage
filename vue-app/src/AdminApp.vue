@@ -1352,12 +1352,16 @@ body { margin: 0; }
 .catalog-page-size input { width: 100px; height: 36px; padding: 0 8px; border: 1px solid #e1e8e4; border-radius: 7px; }
 .catalog-page-size button { height: 36px; }
 .game-management-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 0; }
+.game-bulk-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.game-bulk-toolbar > button.secondary { border: 1px solid #dfe7e2; color: #526158; background: white; }
 .game-management-table-wrap { overflow-x: auto; border: 1px solid #edf1ef; border-radius: 10px; }
-.game-management-table { width: 100%; min-width: 760px; border-collapse: collapse; text-align: left; }
+.game-management-table { width: 100%; min-width: 820px; border-collapse: collapse; text-align: left; }
 .game-management-table th { padding: 10px; color: #87948b; background: #f8faf9; font-size: 10px; text-transform: uppercase; }
 .game-management-table td { padding: 9px; border-top: 1px solid #edf1ef; vertical-align: middle; font-size: 11px; }
-.game-management-table td:first-child { width: 30%; }
-.game-management-table td:first-child input + input { margin-top: 5px; }
+.game-management-table td:first-child { width: 38px; }
+.game-management-table td:first-child input[type="checkbox"] { width: 16px; height: 16px; min-width: 16px; }
+.game-management-table td:nth-child(2) { width: 30%; }
+.game-management-table td:nth-child(2) input + input { margin-top: 5px; }
 .game-actions { display: flex; gap: 6px; }
 .game-actions button, .game-provider-row button { min-height: 34px; padding: 0 9px; font-size: 10px; }
 .game-management-panel .form-message { color: #087b4b; }
