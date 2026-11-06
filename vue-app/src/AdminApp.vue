@@ -476,22 +476,38 @@ const importSortOrder = ref(0);
 const managedGameSearch = ref("");
 const managedProviderFilter = ref("");
 const managedCategoryFilter = ref("");
+const selectedManagedGameIds = ref<string[]>([]);
+const bulkGamesUpdating = ref(false);
 const gameManagementMessage = ref("");
+const managedGameIds = computed(() => new Set(managedGames.value.map((game) => game.id)));
 const availableProviderSources = computed(() => providerSources.value.filter(
   (source) => !managedProviders.value.some((provider) => provider.code === source.code),
 ));
+const availableProviderCatalogGames = computed(() => providerCatalogGames.value.filter(
+  (game) => game.status === 0
+    && /^[a-zA-Z0-9_-]{1,120}$/.test(game.id)
+    && !managedGameIds.value.has(game.id),
+));
+const allAvailableProviderGamesSelected = computed(() => availableProviderCatalogGames.value.length > 0
+  && availableProviderCatalogGames.value.every((game) => selectedProviderGameIds.value.includes(game.id)));
 const filteredManagedGames = computed(() => managedGames.value.filter((game) => {
   const search = managedGameSearch.value.trim().toLowerCase();
   return (!search || `${game.name} ${game.provider} ${game.category}`.toLowerCase().includes(search))
     && (!managedProviderFilter.value || game.providerCode === managedProviderFilter.value)
     && (!managedCategoryFilter.value || game.category === managedCategoryFilter.value);
 }));
+const allFilteredManagedGamesSelected = computed(() => filteredManagedGames.value.length > 0
+  && filteredManagedGames.value.every((game) => selectedManagedGameIds.value.includes(game.id)));
 const openTicketCount = computed(() => supportTickets.value.filter((ticket) => ticket.status !== "resolved").length);
 const platformSettings = ref({ announcement: "", maintenanceMode: false, supportEmail: "", supportPhone: "", supportHours: "24/7", promotions: [] as Promotion[] });
 const settingsMessage = ref("");
 const bannerUploading = ref<Record<string, boolean>>({});
 const bannerPreviewUrls = ref<Record<string, string>>({});
 let refreshTimer: number | undefined;
+
+watch([managedGameSearch, managedProviderFilter, managedCategoryFilter], () => {
+  selectedManagedGameIds.value = [];
+});
 const kycUsers = computed(() => users.value.filter((account) => account.kycStatus !== "not_submitted"));
 const filteredUsers = computed(() => {
   const search = userSearch.value.trim().toLowerCase();
@@ -616,6 +632,7 @@ async function loadGameManagement() {
     const data = await api("/api/admin/game-management");
     managedProviders.value = data.providers;
     managedGames.value = data.games;
+    selectedManagedGameIds.value = [];
     gameStats.value = data.stats;
     catalogPageSize.value = data.pageSize;
     providerApiConfigured.value = data.providerApiConfigured;
