@@ -693,6 +693,7 @@ async function loadProviderGames() {
   providerGamesLoading.value = true;
   gameManagementMessage.value = "";
   importGameId.value = "";
+  selectedProviderGameIds.value = [];
   try {
     const data = await api(`/api/admin/game-management/providers/${encodeURIComponent(importProviderCode.value)}/catalog`);
     providerCatalogGames.value = data.games;
