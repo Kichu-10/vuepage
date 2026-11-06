@@ -12,6 +12,7 @@ import {
   GAME_CATEGORIES,
   getPublicGameCatalog,
   getManagedGame,
+  getManagedProvider,
   getPublicManagedGame,
   getGamePlayer,
   markGamePlayerCreated,
@@ -61,6 +62,22 @@ export function createGamesRouter(uploadDir) {
     const provider = typeof req.query.provider === "string" ? req.query.provider.trim().slice(0, 80) : "";
     const sort = ["popular", "name", "provider"].includes(String(req.query.sort)) ? String(req.query.sort) : "popular";
     res.json(getPublicGameCatalog({ page: Number(pageText), search, provider, category, sort }));
+  });
+
+  router.get("/providers/:code/logo/:filename", (req, res) => {
+    const provider = getManagedProvider(req.params.code);
+    const filename = path.basename(req.params.filename);
+    const expectedUrl = `/api/games/providers/${encodeURIComponent(req.params.code)}/logo/${filename}`;
+    if (!provider || provider.logo !== expectedUrl || !/^[a-f0-9-]{36}\.(?:jpg|png|webp)$/i.test(filename)) {
+      return res.status(404).json({ error: "Provider logo not found" });
+    }
+    const filePath = path.join(uploadDir, "provider-logos", filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Provider logo not found" });
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.type(path.extname(filename));
+    res.sendFile(filePath, { dotfiles: "deny" }, (error) => {
+      if (error && !res.headersSent) res.status(error.statusCode || 500).json({ error: "Could not load provider logo" });
+    });
   });
 
   router.get("/:gameId/thumbnail/:filename", (req, res) => {

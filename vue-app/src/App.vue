@@ -269,7 +269,10 @@
               :aria-pressed="selectedProvider === provider.code"
               @click="selectGameProvider(provider.code)"
             >
-              <span class="game-provider-logo">{{ providerInitials(provider.name) }}</span>
+              <span class="game-provider-logo">
+                <img v-if="provider.logo" :src="provider.logo" alt="" loading="lazy" />
+                <template v-else>{{ providerInitials(provider.name) }}</template>
+              </span>
               <span>{{ provider.name }}</span>
             </button>
             <p v-if="!gameProviders.length" class="game-provider-empty">Providers appear when games are available.</p>
@@ -789,7 +792,7 @@ type Game = {
   isPopular?: boolean;
   thumbnail?: string;
 };
-type GameProvider = { code: string; name: string };
+type GameProvider = { code: string; name: string; logo?: string };
 type GameLobbyTab = "all" | "hot" | "recent" | "favorites";
 type GameSection = {
   category: string;
@@ -2583,6 +2586,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .game-provider-option { display: flex; min-width: 0; min-height: 63px; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 6px 3px; border: 1px solid #d5e8d8; border-radius: 10px; color: #50765b; background: #edf6ed; font-size: 9px; font-weight: 700; line-height: 1.15; text-align: center; overflow-wrap: anywhere; transition: color .18s ease, background .18s ease; }
 .game-provider-option.active { border-color: #168446; color: #fff; background: #168446; }
 .game-provider-logo { display: grid; width: 29px; height: 29px; flex: 0 0 auto; place-items: center; border: 1px solid rgb(22 132 70 / 14%); border-radius: 9px; color: #197744; background: #fff; font-size: 10px; font-weight: 900; }
+.game-provider-logo img { width: 100%; height: 100%; border-radius: inherit; object-fit: contain; }
 .game-provider-option.active .game-provider-logo { border-color: rgb(255 255 255 / 25%); color: #fff; background: rgb(255 255 255 / 12%); }
 .game-provider-empty { margin: 4px 0; color: #63806b; font-size: 9px; line-height: 1.4; text-align: center; }
 .game-lobby-main { min-width: 0; }

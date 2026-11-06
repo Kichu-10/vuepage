@@ -158,14 +158,21 @@ export function createAdminRouter(uploadDir) {
   const router = express.Router();
   const promotionImageDir = path.join(uploadDir, "promotion-banners");
   const gameThumbnailDir = path.join(uploadDir, "game-thumbnails");
+  const providerLogoDir = path.join(uploadDir, "provider-logos");
   fs.mkdirSync(promotionImageDir, { recursive: true });
   fs.mkdirSync(gameThumbnailDir, { recursive: true });
+  fs.mkdirSync(providerLogoDir, { recursive: true });
   const uploadPromotionImage = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024, files: 1 },
     fileFilter: (_req, file, callback) => callback(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)),
   });
   const uploadGameThumbnail = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 3 * 1024 * 1024, files: 1 },
+    fileFilter: (_req, file, callback) => callback(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)),
+  });
+  const uploadProviderLogo = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 3 * 1024 * 1024, files: 1 },
     fileFilter: (_req, file, callback) => callback(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)),
@@ -289,6 +296,56 @@ export function createAdminRouter(uploadDir) {
     } catch (error) {
       logger.error("admin_game_provider_audit_failed", { providerCode: provider.code, error: error instanceof Error ? error.message : String(error) });
       res.status(500).json({ error: "Provider was updated, but its audit record could not be saved" });
+    }
+  });
+
+  router.post("/game-management/providers/:code/logo", (req, res, next) => {
+    uploadProviderLogo.single("logo")(req, res, (error) => {
+      if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ error: "Provider logos must be 3 MB or smaller" });
+      }
+      if (error) return next(error);
+      next();
+    });
+  }, async (req, res) => {
+    const provider = getManagedProvider(req.params.code);
+    if (!provider) return res.status(404).json({ error: "Game provider not found" });
+    if (!req.file) return res.status(400).json({ error: "Upload a valid JPEG, PNG, or WebP logo" });
+
+    const extension = identifyPromotionImage(req.file.buffer);
+    if (!extension) return res.status(400).json({ error: "The logo is not a valid JPEG, PNG, or WebP image" });
+
+    const filename = `${randomUUID()}.${extension}`;
+    const filePath = path.join(providerLogoDir, filename);
+    const logoUrl = `/api/games/providers/${encodeURIComponent(provider.code)}/logo/${filename}`;
+    let logoUpdated = false;
+    try {
+      await fs.promises.writeFile(filePath, req.file.buffer, { flag: "wx" });
+      const updatedProvider = saveManagedProvider({
+        code: provider.code,
+        name: provider.name,
+        enabled: provider.enabled,
+        logo: logoUrl,
+      });
+      logoUpdated = true;
+      recordGameManagementAudit(req.user.id, "GAME_PROVIDER_LOGO_UPDATED", provider.name, "Provider logo uploaded");
+      if (provider.logo.startsWith(`/api/games/providers/${encodeURIComponent(provider.code)}/logo/`)) {
+        const oldFilename = path.basename(provider.logo);
+        if (oldFilename !== filename) {
+          await fs.promises.rm(path.join(providerLogoDir, oldFilename), { force: true }).catch((error) => {
+            logger.warn("admin_provider_logo_cleanup_failed", { providerCode: provider.code, error: error instanceof Error ? error.message : String(error) });
+          });
+        }
+      }
+      res.json({ logo: logoUrl, provider: updatedProvider });
+    } catch (error) {
+      if (!logoUpdated) await fs.promises.rm(filePath, { force: true });
+      logger.error("admin_provider_logo_upload_failed", { providerCode: provider.code, error: error instanceof Error ? error.message : String(error) });
+      res.status(500).json({
+        error: logoUpdated
+          ? "Provider logo was updated, but its audit record could not be saved"
+          : "Could not update provider logo",
+      });
     }
   });
 

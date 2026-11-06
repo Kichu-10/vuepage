@@ -113,6 +113,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS game_providers (
     code TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0,
+    logo TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS managed_games (
@@ -157,6 +158,10 @@ if (!gamePlayerColumns.includes("provider_created")) {
 const managedGameColumns = db.prepare("PRAGMA table_info(managed_games)").all().map((column) => column.name);
 if (!managedGameColumns.includes("is_popular")) {
   db.exec("ALTER TABLE managed_games ADD COLUMN is_popular INTEGER NOT NULL DEFAULT 0;");
+}
+const gameProviderColumns = db.prepare("PRAGMA table_info(game_providers)").all().map((column) => column.name);
+if (!gameProviderColumns.includes("logo")) {
+  db.exec("ALTER TABLE game_providers ADD COLUMN logo TEXT NOT NULL DEFAULT '';");
 }
 db.exec(`
   UPDATE managed_games
@@ -388,6 +393,7 @@ function providerRow(row) {
     code: row.code,
     name: row.name,
     enabled: Boolean(row.enabled),
+    logo: row.logo,
     gameCount: Number(row.game_count || 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -431,13 +437,17 @@ export function getManagedProvider(code) {
   return row ? providerRow(row) : null;
 }
 
-export function saveManagedProvider({ code, name, enabled }) {
+export function saveManagedProvider({ code, name, enabled, logo }) {
   const now = new Date().toISOString();
   db.prepare(`
-    INSERT INTO game_providers (code, name, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(code) DO UPDATE SET name = excluded.name, enabled = excluded.enabled, updated_at = excluded.updated_at
-  `).run(code, name, enabled ? 1 : 0, now, now);
+    INSERT INTO game_providers (code, name, enabled, logo, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(code) DO UPDATE SET
+      name = excluded.name,
+      enabled = excluded.enabled,
+      logo = CASE WHEN ? IS NULL THEN game_providers.logo ELSE excluded.logo END,
+      updated_at = excluded.updated_at
+  `).run(code, name, enabled ? 1 : 0, logo ?? "", now, now, logo ?? null);
   return getManagedProvider(code);
 }
 
@@ -612,10 +622,10 @@ export function getPublicGameCatalog({ page = 1, search = "", provider = "", cat
     status: game.provider_status,
   }));
   const providers = db.prepare(`
-    SELECT DISTINCT p.code, p.name FROM game_providers p
+    SELECT DISTINCT p.code, p.name, p.logo FROM game_providers p
     JOIN managed_games g ON g.provider_code = p.code
     WHERE p.enabled = 1 AND g.enabled = 1 ORDER BY p.name COLLATE NOCASE
-  `).all().map((row) => ({ code: row.code, name: row.name }));
+  `).all().map((row) => ({ code: row.code, name: row.name, logo: row.logo }));
   const categories = db.prepare(`
     SELECT category FROM managed_games g
     JOIN game_providers p ON p.code = g.provider_code

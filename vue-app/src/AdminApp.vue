@@ -73,7 +73,7 @@
 
       <section class="game-management-block">
         <div class="panel-heading">
-          <div><h3>Providers</h3><p>Provider API credentials are read from server environment variables and are never returned to the browser.</p></div>
+          <div><h3>Providers</h3><p>Upload a logo for each provider; it will appear in the customer Games filters. Provider API credentials are read from server environment variables and are never returned to the browser.</p></div>
           <button type="button" class="secondary" :disabled="providerCatalogLoading" @click="loadProviderSources">{{ providerCatalogLoading ? "Loading…" : "Add Provider" }}</button>
         </div>
         <div v-if="providerSources.length" class="toolbar game-provider-add">
@@ -86,6 +86,17 @@
         </div>
         <div v-for="provider in managedProviders" :key="provider.code" class="game-provider-row">
           <div><strong>{{ provider.code }}</strong><small>{{ provider.gameCount }} managed games</small></div>
+          <div class="provider-logo-control">
+            <img v-if="provider.logo" :src="provider.logo" :alt="`${provider.name} logo`" />
+            <span v-else>{{ provider.code.slice(0, 2).toUpperCase() }}</span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              :aria-label="`Upload ${provider.name} logo`"
+              :disabled="providerLogoUploading[provider.code]"
+              @change="uploadProviderLogo(provider, $event)"
+            />
+          </div>
           <input v-model="provider.name" maxlength="120" :aria-label="`${provider.code} display name`" />
           <label class="game-enabled-control"><input v-model="provider.enabled" type="checkbox" /> Enabled</label>
           <button type="button" class="secondary" @click="saveGameProvider(provider)">Save</button>
@@ -111,8 +122,8 @@
             <option v-for="category in gameCategories" :key="category" :value="category">{{ category }}</option>
           </select>
           <label class="game-popular-control"><input v-model="importIsPopular" type="checkbox" /> Popular</label>
-          <input v-model="importThumbnail" maxlength="500" placeholder="Thumbnail HTTPS URL (optional)" aria-label="Game thumbnail URL" />
-          <input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Upload game thumbnail" @change="setImportThumbnailFile" />
+          <input v-model="importThumbnail" maxlength="500" placeholder="Game logo/art HTTPS URL (optional)" aria-label="Game logo or artwork URL" />
+          <input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Upload game logo or artwork" @change="setImportThumbnailFile" />
           <input v-model.number="importSortOrder" type="number" placeholder="Display order" aria-label="Display order" />
           <button type="button" :disabled="!importProviderCode || !importGameId" @click="importGame">Add Game</button>
         </div>
@@ -144,9 +155,11 @@
             <tbody>
               <tr v-for="game in filteredManagedGames" :key="game.id">
                 <td>
+                  <img v-if="game.thumbnail" class="managed-game-thumbnail" :src="game.thumbnail" :alt="`${game.name} logo or artwork`" />
+                  <span v-else class="managed-game-no-thumbnail">No game logo uploaded</span>
                   <input v-model="game.name" maxlength="160" :aria-label="`${game.name} name`" />
-                  <input v-model="game.thumbnail" maxlength="500" placeholder="Thumbnail URL" :aria-label="`${game.name} thumbnail`" />
-                  <input type="file" accept="image/jpeg,image/png,image/webp" :aria-label="`Upload ${game.name} thumbnail`" @change="uploadManagedThumbnail(game, $event)" />
+                  <input v-model="game.thumbnail" maxlength="500" placeholder="Game logo/art URL" :aria-label="`${game.name} logo or artwork URL`" />
+                  <input type="file" accept="image/jpeg,image/png,image/webp" :aria-label="`Upload ${game.name} logo or artwork`" @change="uploadManagedThumbnail(game, $event)" />
                 </td>
                 <td>
                   <select v-model="game.providerCode" :aria-label="`${game.name} provider`">
@@ -356,7 +369,7 @@ type Transaction = { id: string; username: string; type: string; amount: number;
 type AuditLog = { id: string; action: string; target: string; details: string; createdAt: string };
 type SupportTicket = { id: string; username: string; subject: string; message: string; status: string; reply: string; createdAt: string; updatedAt: string };
 type Promotion = { id: string; title: string; description: string; reward: string; terms: string; active: boolean; bannerImage: string; bannerIncludesText: boolean };
-type ManagedProvider = { code: string; name: string; enabled: boolean; gameCount: number };
+type ManagedProvider = { code: string; name: string; enabled: boolean; gameCount: number; logo: string };
 type ManagedGame = {
   id: string; providerCode: string; provider: string; providerEnabled: boolean; externalId: string; name: string;
   thumbnail: string; category: string; isPopular: boolean; gameType: string; sortOrder: number; enabled: boolean; providerStatus: number;
@@ -392,6 +405,7 @@ const resultMessage = ref("");
 const lastRefreshTime = ref("just now");
 const supportTickets = ref<SupportTicket[]>([]);
 const managedProviders = ref<ManagedProvider[]>([]);
+const providerLogoUploading = ref<Record<string, boolean>>({});
 const managedGames = ref<ManagedGame[]>([]);
 const gameCategories = ["Mini Games", "Slots", "Fishing"];
 const gameStats = ref({ totalProviders: 0, totalGames: 0, availableGames: 0, activeGames: 0, disabledGames: 0 });
@@ -715,6 +729,33 @@ async function uploadManagedThumbnail(game: ManagedGame, event: Event) {
   } catch (caught) {
     gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not upload game thumbnail";
   } finally {
+    input.value = "";
+  }
+}
+
+async function uploadProviderLogo(provider: ManagedProvider, event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  providerLogoUploading.value[provider.code] = true;
+  try {
+    const form = new FormData();
+    form.append("logo", file);
+    const headers = new Headers();
+    if (token.value) headers.set("Authorization", `Bearer ${token.value}`);
+    const response = await fetch(`/api/admin/game-management/providers/${encodeURIComponent(provider.code)}/logo`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not upload provider logo");
+    await loadGameManagement();
+    gameManagementMessage.value = `Logo updated for ${provider.name}.`;
+  } catch (caught) {
+    gameManagementMessage.value = caught instanceof Error ? caught.message : "Could not upload provider logo";
+  } finally {
+    providerLogoUploading.value[provider.code] = false;
     input.value = "";
   }
 }
@@ -1147,10 +1188,15 @@ body { margin: 0; }
 .game-popular-control { display: inline-flex; align-items: center; gap: 5px; color: #5a685f; font-size: 11px; white-space: nowrap; }
 .game-popular-control input { width: 16px; height: 16px; }
 .game-provider-add button { min-height: 40px; padding: 0 14px; border: 0; border-radius: 8px; color: #fff; background: #087b4b; font-size: 11px; font-weight: 750; }
-.game-provider-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(140px, 2fr) auto auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid #edf1ef; border-radius: 10px; }
+.game-provider-row { display: grid; grid-template-columns: minmax(100px, 1fr) 120px minmax(140px, 2fr) auto auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid #edf1ef; border-radius: 10px; }
 .game-provider-row > div { display: grid; gap: 3px; }
+.game-provider-row .provider-logo-control { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.provider-logo-control img, .provider-logo-control > span { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border: 1px solid #e1e8e4; border-radius: 8px; color: #087b4b; background: #f0f7f2; font-size: 11px; font-weight: 850; object-fit: contain; }
+.provider-logo-control input[type="file"] { width: 100%; min-width: 0; font-size: 9px; }
 .game-provider-row small, .game-management-table td small { display: block; color: #8d9992; font-size: 10px; }
 .game-provider-row > input, .game-management-table input { width: 100%; min-width: 80px; height: 36px; padding: 0 8px; border: 1px solid #e1e8e4; border-radius: 7px; background: white; font: inherit; }
+.managed-game-thumbnail { display: block; width: 72px; height: 48px; margin-bottom: 6px; border-radius: 6px; background: #f0f7f2; object-fit: contain; }
+.managed-game-no-thumbnail { display: block; margin-bottom: 6px; color: #8d9992; font-size: 10px; }
 .game-enabled-control { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; color: #5a685f; font-size: 11px; }
 .game-enabled-control input { width: 16px; height: 16px; }
 .catalog-page-size { display: flex; align-items: end; gap: 8px; }
@@ -1208,7 +1254,8 @@ body { margin: 0; }
   .stat-card .stat-icon { width: 36px; height: 36px; }
   .stat-card strong { font-size: 18px; }
   .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .game-provider-row { grid-template-columns: 1fr 1fr; }
+  .game-provider-row { grid-template-columns: minmax(0, 1fr) minmax(100px, 1fr); }
+  .game-provider-row .provider-logo-control { grid-column: 1 / -1; }
   .game-provider-add, .game-management-filters { grid-template-columns: 1fr; }
   .game-management-panel > .panel-heading { align-items: flex-start; flex-direction: column; }
   .transaction-toolbar { grid-template-columns: 1fr !important; }
