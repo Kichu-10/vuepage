@@ -20,7 +20,7 @@ npm run dev
 
 Create a production build with `npm run build`.
 
-In the admin **Games** section, upload JPEG, PNG, or WebP game artwork and provider logos (up to 3 MB each). Game artwork appears on game cards, and provider logos appear in the customer Games provider filters.
+In the admin **Games** section, select and bulk-import available games from a provider, then select filtered managed games to enable or disable them together. Bulk-imported games start disabled. Upload JPEG, PNG, or WebP game artwork and provider logos (up to 3 MB each); game artwork appears on game cards, and provider logos appear in the customer Games provider filters.
 
 Run backend tests with `npm test`. Copy `.env.example` to `.env.local` and replace the example values before deployment. The HUIDU transfer-wallet integration uses server-side `HUIDU_SERVER_URL`, `HUIDU_AGENCY_UID`, `HUIDU_AES_KEY`, and `HUIDU_PLAYER_PREFIX` settings; do not expose these values to the browser or commit real credentials. Signed-in users can manage payment requests, transaction history, return provider-wallet funds from the Wallet page, and upload a JPEG, PNG, or WebP profile picture (up to 3 MB) from Account or Profile. `SENTRY_DSN` enables error monitoring; database snapshots are written to `server/backups` daily by default and old snapshots are trimmed according to `DB_BACKUP_RETENTION`.
 
