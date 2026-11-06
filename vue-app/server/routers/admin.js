@@ -525,6 +525,49 @@ export function createAdminRouter(uploadDir) {
     }
   });
 
+  router.patch("/game-management/bulk-enabled", validate(bulkGameEnabledSchema), (req, res) => {
+    const games = req.body.gameIds.map((id) => getManagedGame(id));
+    if (games.some((game) => !game)) return res.status(404).json({ error: "One or more selected games were not found" });
+    if (req.body.enabled && games.some((game) => game.providerStatus !== 0)) {
+      return res.status(409).json({ error: "Unavailable provider games cannot be enabled" });
+    }
+    const changedGames = games.filter((game) => game.enabled !== req.body.enabled);
+    if (!changedGames.length) return res.json({ updatedCount: 0, enabled: req.body.enabled });
+
+    const admin = db.prepare("SELECT username FROM users WHERE id = ?").get(req.user.id);
+    const updatedAt = new Date().toISOString();
+    const updateGame = db.prepare("UPDATE managed_games SET enabled = ?, updated_at = ? WHERE id = ?");
+    const insertAudit = db.prepare(`
+      INSERT INTO audit_logs (id, admin_username, action, target, details, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    try {
+      db.exec("BEGIN IMMEDIATE");
+      for (const game of changedGames) {
+        updateGame.run(req.body.enabled ? 1 : 0, updatedAt, game.id);
+        insertAudit.run(
+          randomUUID(),
+          admin?.username || "admin",
+          req.body.enabled ? "GAME_ENABLED" : "GAME_DISABLED",
+          game.name,
+          `Bulk ${req.body.enabled ? "enabled" : "disabled"} from game management`,
+          updatedAt,
+        );
+      }
+      db.exec("DELETE FROM audit_logs WHERE id NOT IN (SELECT id FROM audit_logs ORDER BY created_at DESC, rowid DESC LIMIT 1000)");
+      db.exec("COMMIT");
+      res.json({ updatedCount: changedGames.length, enabled: req.body.enabled });
+    } catch (error) {
+      try {
+        db.exec("ROLLBACK");
+      } catch (rollbackError) {
+        logger.error("admin_managed_games_bulk_rollback_failed", { error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError) });
+      }
+      logger.error("admin_managed_games_bulk_update_failed", { enabled: req.body.enabled, error: error instanceof Error ? error.message : String(error) });
+      res.status(500).json({ error: "Could not update selected games" });
+    }
+  });
+
   router.post("/game-management/games/:id/thumbnail", (req, res, next) => {
     uploadGameThumbnail.single("thumbnail")(req, res, (error) => {
       if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
