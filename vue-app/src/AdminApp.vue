@@ -110,7 +110,7 @@
           <button type="button" class="secondary" :disabled="!managedProviders.length || providerGamesLoading" @click="loadProviderGames">{{ providerGamesLoading ? "Loading…" : "Load provider games" }}</button>
         </div>
         <div class="toolbar game-provider-add">
-          <select v-model="importProviderCode" aria-label="Provider for imported games" @change="providerCatalogGames = []">
+          <select v-model="importProviderCode" aria-label="Provider for imported games" @change="providerCatalogGames = []; selectedProviderGameIds = []; importGameId = ''">
             <option value="">Choose provider</option>
             <option v-for="provider in managedProviders" :key="provider.code" :value="provider.code">{{ provider.name }}</option>
           </select>
@@ -126,6 +126,34 @@
           <input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Upload game logo or artwork" @change="setImportThumbnailFile" />
           <input v-model.number="importSortOrder" type="number" placeholder="Display order" aria-label="Display order" />
           <button type="button" :disabled="!importProviderCode || !importGameId" @click="importGame">Add Game</button>
+        </div>
+        <div v-if="providerCatalogGames.length" class="provider-game-selection">
+          <label class="game-enabled-control">
+            <input
+              type="checkbox"
+              :checked="allAvailableProviderGamesSelected"
+              :disabled="!availableProviderCatalogGames.length || providerGamesImporting"
+              @change="toggleAllProviderGames"
+            />
+            Select all available games ({{ availableProviderCatalogGames.length }})
+          </label>
+          <span>{{ selectedProviderGameIds.length }} selected</span>
+          <button type="button" :disabled="!selectedProviderGameIds.length || providerGamesImporting" @click="importSelectedProviderGames">
+            {{ providerGamesImporting ? "Adding…" : `Add selected (${selectedProviderGameIds.length})` }}
+          </button>
+          <div class="provider-game-list">
+            <label v-for="game in providerCatalogGames" :key="game.id" class="provider-game-option">
+              <input
+                type="checkbox"
+                :checked="selectedProviderGameIds.includes(game.id)"
+                :disabled="game.status !== 0 || !/^[a-zA-Z0-9_-]{1,120}$/.test(game.id) || managedGameIds.has(game.id) || providerGamesImporting"
+                @change="toggleProviderGame(game.id, $event)"
+              />
+              <span>{{ game.name }} ({{ game.id }})</span>
+              <small v-if="game.status !== 0">Unavailable</small>
+              <small v-else-if="managedGameIds.has(game.id)">Already added</small>
+            </label>
+          </div>
         </div>
       </section>
 
