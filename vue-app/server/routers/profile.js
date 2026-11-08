@@ -4,7 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import multer from "multer";
 import { authenticate } from "../middleware/auth.js";
-import { readDb, writeDb } from "../database.js";
+import { readDb, readUserById, writeDb } from "../database.js";
 import { logger } from "../config/logger.js";
 
 const avatarLimit = 3 * 1024 * 1024;
@@ -27,7 +27,7 @@ export function createProfileRouter(uploadDir) {
   const router = express.Router();
 
   router.get("/profile/avatar", authenticate, (req, res) => {
-    const user = readDb().users.find((item) => item.id === req.user.id);
+    const user = readUserById(req.user.id);
     if (!user || user.status !== "active") return res.status(403).json({ error: "Account unavailable" });
     if (!user.avatarPath) return res.status(404).json({ error: "Profile picture not found" });
     const filename = path.basename(user.avatarPath);
