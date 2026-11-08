@@ -514,12 +514,17 @@ test("game player uses the available viewport and toggles player fullscreen", as
       },
     });
   });
+  let gameWalletChecks = 0;
+  const launchRequests: Array<{ gameId: string; amount: number }> = [];
   await page.route("**/api/games?*", (route) => route.fulfill({
     json: {
-      games: [{ id: "sample-game", name: "Sample Game", provider: "PGSoft", providerCode: "PG", gameType: "Slot", status: 0 }],
+      games: [
+        { id: "sample-game", name: "Sample Game", provider: "PGSoft", providerCode: "PG", gameType: "Slot", status: 0 },
+        { id: "another-game", name: "Another Game", provider: "PGSoft", providerCode: "PG", gameType: "Slot", status: 0 },
+      ],
       page: 1,
       pageSize: 12,
-      total: 1,
+      total: 2,
       pageCount: 1,
       hasMore: false,
       providers: [{ code: "PG", name: "PGSoft" }],
