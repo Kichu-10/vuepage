@@ -583,7 +583,7 @@
             <span>Amount to use for this game (minimum {{ currencyLabel }} 100)</span>
             <input v-model="gameFundingAmount" type="number" min="100" :max="Math.min(Math.floor(balance * 100) / 100, 100000000)" step="0.01" inputmode="decimal" required />
           </label>
-          <p class="auth-configuration-note">The server checks your available Main Wallet balance before moving funds. Pending withdrawals are not available for game funding.</p>
+          <p class="auth-configuration-note">Only the amount you choose is transferred. Pending withdrawals are not available for game funding.</p>
           <button class="primary-button full-button" type="submit" :disabled="launchingGameId !== null">
             {{ launchingGameId ? "Opening game..." : "Continue to game" }}
           </button>
