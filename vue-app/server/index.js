@@ -18,6 +18,7 @@ import { createSupportRouter } from "./routers/support.js";
 import { createGamesRouter } from "./routers/games.js";
 import { createPromotionsRouter } from "./routers/promotions.js";
 import { createProfileRouter } from "./routers/profile.js";
+import { createInboxRouter } from "./routers/inbox.js";
 import { backupSqlite } from "./database.js";
 import { logger } from "./config/logger.js";
 
@@ -111,6 +112,8 @@ function auth(req, res, next) {
   }
 }
 
+app.use("/api/inbox", createInboxRouter(auth));
+
 function admin(req, res, next) {
   if (!ipIsAllowed(req)) {
     return res.status(403).json({ error: "Admin access is not permitted from this network" });
@@ -173,27 +176,6 @@ async function seedAdmin() {
     writeDb(db);
   }
 }
-
-app.get("/api/inbox", auth, (req, res) => {
-  const db = readDb();
-  const notifications = (db.notifications || [])
-    .filter((item) => item.userId === req.user.id)
-    .slice(0, 100);
-  res.json({
-    notifications,
-    unreadCount: notifications.filter((item) => !item.read).length,
-  });
-});
-
-app.patch("/api/inbox/read", auth, (req, res) => {
-  const db = readDb();
-  db.notifications ||= [];
-  for (const item of db.notifications) {
-    if (item.userId === req.user.id) item.read = true;
-  }
-  writeDb(db);
-  res.json({ unreadCount: 0 });
-});
 
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);

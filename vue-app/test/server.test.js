@@ -29,6 +29,8 @@ const { createAdminRouter } = await import("../server/routers/admin.js");
 const { createGamesRouter } = await import("../server/routers/games.js");
 const { createPromotionsRouter } = await import("../server/routers/promotions.js");
 const { createProfileRouter } = await import("../server/routers/profile.js");
+const { createInboxRouter } = await import("../server/routers/inbox.js");
+const { authenticate } = await import("../server/middleware/auth.js");
 const { decryptHuiduPayload, displayCurrency, encryptHuiduPayload } = await import("../server/services/game-provider.js");
 const testAesKey = process.env.HUIDU_AES_KEY;
 
@@ -41,6 +43,7 @@ app.use("/api/promotions", createPromotionsRouter(path.join(tempDir, "uploads"))
 app.use("/api/auth", createProfileRouter(path.join(tempDir, "uploads")));
 app.use("/api/admin", createAdminAuthRouter());
 app.use("/api/admin", createAdminRouter(path.join(tempDir, "uploads")));
+app.use("/api/inbox", createInboxRouter(authenticate));
 
 const account = {
   id: "user-1",
@@ -79,7 +82,7 @@ function huiduResponse(payload) {
   return { ok: true, json: async () => ({ code: 0, msg: "", payload }) };
 }
 
-function resetDatabase({ users = [account, admin], transactions = [] } = {}) {
+function resetDatabase({ users = [account, admin], transactions = [], notifications = [] } = {}) {
   for (const table of ["managed_games", "game_providers", "game_wallet_transfers", "game_players", "ledger_entries", "game_results"]) {
     database.db.exec(`DELETE FROM ${table}`);
   }
@@ -89,7 +92,7 @@ function resetDatabase({ users = [account, admin], transactions = [] } = {}) {
     transactions,
     otps: [],
     verifications: {},
-    notifications: [],
+    notifications,
     supportTickets: [],
     auditLogs: [],
     gameResults: [],
@@ -148,6 +151,52 @@ test("platform settings are read independently from the application database sna
     supportHours: "",
     promotions: [],
   });
+});
+
+test("inbox reads are limited to the user's newest notifications and mark only that user's rows", async () => {
+  const notifications = Array.from({ length: 105 }, (_, index) => ({
+    id: `notification-${index}`,
+    userId: account.id,
+    type: "message",
+    title: `Message ${index}`,
+    message: `Body ${index}`,
+    read: false,
+    createdAt: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+  }));
+  notifications.push({
+    id: "other-user-notification",
+    userId: "other-user",
+    type: "message",
+    title: "Other user's message",
+    message: "Body",
+    read: false,
+    createdAt: new Date().toISOString(),
+  });
+  resetDatabase({
+    users: [account, admin, { id: "other-user", username: "other", role: "user", balance: 0 }],
+    notifications,
+  });
+
+  const response = await request(app)
+    .get("/api/inbox")
+    .set("Authorization", `Bearer ${tokenFor(account)}`)
+    .expect(200);
+  assert.equal(response.body.notifications.length, 100);
+  assert.equal(response.body.notifications[0].id, "notification-104");
+  assert.equal(response.body.unreadCount, 100);
+
+  await request(app)
+    .patch("/api/inbox/read")
+    .set("Authorization", `Bearer ${tokenFor(account)}`)
+    .expect(200);
+  assert.equal(database.db.prepare("SELECT is_read FROM notifications WHERE id = ?").get("notification-104").is_read, 1);
+  assert.equal(database.db.prepare("SELECT is_read FROM notifications WHERE id = ?").get("other-user-notification").is_read, 0);
+
+  const plan = database.db.prepare(`
+    EXPLAIN QUERY PLAN SELECT id FROM notifications
+    WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 100
+  `).all(account.id);
+  assert.ok(plan.some((row) => row.detail.includes("idx_notifications_user_created")));
 });
 
 test("withdrawal requests reserve available funds", async () => {
