@@ -121,6 +121,7 @@ export function createGamesRouter(uploadDir) {
     const amountCents = /^\d+(?:\.\d{1,2})?$/.test(amountText)
       ? toCents(Number(amountText))
       : null;
+    const useExistingGameBalance = amountCents === 0;
     const validAmount = Number.isSafeInteger(amountCents) && amountCents >= 10_000 && amountCents <= 10_000_000_000;
     if (amountText && !validAmount) {
       return res.status(400).json({ error: "Enter a valid game wallet funding amount" });
