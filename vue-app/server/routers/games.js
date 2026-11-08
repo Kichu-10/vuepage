@@ -16,7 +16,7 @@ import {
   getPublicManagedGame,
   getGamePlayer,
   markGamePlayerCreated,
-  readDb,
+  readUserById,
   toCents,
 } from "../database.js";
 import { logger } from "../config/logger.js";
@@ -100,8 +100,8 @@ export function createGamesRouter(uploadDir) {
     try {
       const player = getGamePlayer(req.user.id);
       if (!player?.providerCreated) {
-        const user = readDb().users.find((item) => item.id === req.user.id && item.status === "active");
-        if (!user) return res.status(403).json({ error: "Account unavailable" });
+        const user = readUserById(req.user.id);
+        if (user?.status !== "active") return res.status(403).json({ error: "Account unavailable" });
         return res.json({ currency: currencyForCountry(user.country), balance: 0 });
       }
       const wallet = await getProviderGameWalletBalance(player.playerId, player.currency);
@@ -129,10 +129,8 @@ export function createGamesRouter(uploadDir) {
     if (![1, 2].includes(platform)) return res.status(400).json({ error: "Invalid game platform" });
     let transfer;
     try {
-      const user = readDb().users.find(
-        (item) => item.id === req.user.id && item.status === "active",
-      );
-      if (!user) return res.status(403).json({ error: "Account unavailable" });
+      const user = readUserById(req.user.id);
+      if (user?.status !== "active") return res.status(403).json({ error: "Account unavailable" });
 
       const game = getPublicManagedGame(gameId);
       if (!game) return res.status(404).json({ error: "Game not found" });
@@ -179,7 +177,7 @@ export function createGamesRouter(uploadDir) {
           providerBalanceCents: result.balanceCents,
         });
         markGamePlayerCreated(user.id);
-        const currentUser = readDb().users.find((item) => item.id === user.id);
+        const currentUser = readUserById(user.id);
         return res.json({
           gameUrl: result.gameUrl,
           balance: currentUser?.balance ?? 0,
@@ -213,10 +211,8 @@ export function createGamesRouter(uploadDir) {
   router.post("/wallet/return", authenticate, async (req, res) => {
     let transfer;
     try {
-      const user = readDb().users.find(
-        (item) => item.id === req.user.id && item.status === "active",
-      );
-      if (!user) return res.status(403).json({ error: "Account unavailable" });
+      const user = readUserById(req.user.id);
+      if (user?.status !== "active") return res.status(403).json({ error: "Account unavailable" });
       const player = getGamePlayer(user.id);
       if (!player?.providerCreated) return res.status(409).json({ error: "No game wallet has been created" });
 
@@ -227,8 +223,8 @@ export function createGamesRouter(uploadDir) {
         const wallet = await getProviderGameWalletBalance(player.playerId, player.currency);
         const amountCents = toCents(wallet.balance);
         if (amountCents <= 0) {
-          const currentUser = readDb().users.find((item) => item.id === user.id && item.status === "active");
-          if (!currentUser) return res.status(403).json({ error: "Account unavailable" });
+          const currentUser = readUserById(user.id);
+          if (currentUser?.status !== "active") return res.status(403).json({ error: "Account unavailable" });
           return res.json({
             message: "There are no funds to return from the game wallet.",
             amount: 0,
