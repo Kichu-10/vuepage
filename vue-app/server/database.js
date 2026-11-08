@@ -112,6 +112,9 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_game_wallet_transfers_user ON game_wallet_transfers(user_id);
   CREATE INDEX IF NOT EXISTS idx_game_wallet_transfers_status ON game_wallet_transfers(status);
+  CREATE INDEX IF NOT EXISTS idx_game_wallet_transfers_pending
+    ON game_wallet_transfers(user_id, direction, created_at)
+    WHERE status = 'pending';
 
   CREATE TABLE IF NOT EXISTS game_providers (
     code TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0,

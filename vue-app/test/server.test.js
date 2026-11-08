@@ -653,6 +653,15 @@ test("game wallet currency follows the signed-in user's country", async () => {
   }
 });
 
+test("pending game-wallet lookups use the user and direction index", () => {
+  const plan = database.db.prepare(`
+    EXPLAIN QUERY PLAN SELECT * FROM game_wallet_transfers
+    WHERE user_id = ? AND direction = ? AND status = 'pending'
+    ORDER BY created_at LIMIT 1
+  `).all(account.id, "in");
+  assert.ok(plan.some((row) => row.detail.includes("idx_game_wallet_transfers_pending")));
+});
+
 test.skip("obsolete seamless game catalog and launch test", async () => {
   resetDatabase({ users: [{ ...account, country: "IN", balance: 500 }, admin] });
   const signingPayload = {
