@@ -1126,18 +1126,22 @@ onMounted(async () => {
   else void loadGames();
   token.value = localStorage.getItem("b9_token") || "";
   if (currentPage.value === "wallet") void loadPaymentDetails();
-  try {
-    const settings = await fetch("/api/platform/settings").then((response) => response.json());
-    if (settings.announcement) platformAnnouncement.value = settings.announcement;
-    maintenanceMode.value = Boolean(settings.maintenanceMode);
-    googleClientId.value = settings.googleClientId || "";
-  } catch {
-    // Keep the built-in announcement when platform settings are unavailable.
-  }
-  if (token.value) {
-    await restoreSession();
-    if (signedIn.value) startInboxPolling();
-  }
+  const settingsRequest = fetch("/api/platform/settings")
+    .then((response) => {
+      if (!response.ok) throw new Error("Could not load platform settings");
+      return response.json();
+    })
+    .then((settings) => {
+      if (settings.announcement) platformAnnouncement.value = settings.announcement;
+      maintenanceMode.value = Boolean(settings.maintenanceMode);
+      googleClientId.value = settings.googleClientId || "";
+    })
+    .catch(() => {
+      // Keep the built-in announcement when platform settings are unavailable.
+    });
+  const sessionRequest = token.value ? restoreSession() : Promise.resolve();
+  await Promise.all([settingsRequest, sessionRequest]);
+  if (signedIn.value) startInboxPolling();
 });
 onUnmounted(() => {
   document.removeEventListener("fullscreenchange", handleFullscreenChange);

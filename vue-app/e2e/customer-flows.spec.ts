@@ -161,6 +161,24 @@ test("navigation works and the homepage shows responsive category game sections"
   await expect(page.getByRole("heading", { name: "Sign in to manage your wallet" })).toBeVisible();
 });
 
+test("loads public settings and restores the session concurrently", async ({ page }) => {
+  let settingsResponseSent = false;
+  let sessionRequestedBeforeSettings = false;
+  await page.addInitScript(() => localStorage.setItem("b9_token", "expired-test-token"));
+  await page.route("**/api/platform/settings", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    settingsResponseSent = true;
+    await route.fulfill({ json: {} });
+  });
+  await page.route("**/api/auth/me", async (route) => {
+    sessionRequestedBeforeSettings = !settingsResponseSent;
+    await route.fulfill({ status: 401, json: { error: "Authentication required" } });
+  });
+
+  await page.goto("/");
+  await expect.poll(() => sessionRequestedBeforeSettings).toBe(true);
+});
+
 test("homepage loads additional category games without duplicates", async ({ page }) => {
   let popularPageTwoRequests = 0;
   const firstGame = {
