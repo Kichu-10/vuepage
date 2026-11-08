@@ -30,6 +30,12 @@ Google Sign-In and account creation use the same server-side `GOOGLE_CLIENT_ID` 
 
 See the repository's [API Reference](../docs/API.md), [Operations Guide](../docs/OPERATIONS.md), and [Game Provider Setup](../docs/GAME-PROVIDER-SETUP.md) for game-wallet routes, credential handling, and deployment configuration.
 
+## Performance checks
+
+For production-sized assets and route chunks, run `npm run build` and inspect the Vite output. In November 2026, the initial JavaScript chunk measured 362.32 kB (121.17 kB gzip) before optimization and 322.44 kB (116.38 kB gzip) after. The admin interface is now a separate 50.41 kB (13.67 kB gzip) chunk and is requested only when its route opens.
+
+The bundled source images used by the app went from 1,350.56 kB to 363.77 kB combined (about 73% smaller). This includes the hero artwork reduction from 466.87 kB to 34.54 kB and the five category images from 484.83 kB to 26.18 kB. Browser checks against the production preview confirmed only the public chunk loads on the homepage and that payment details are fetched when the wallet route opens. These are local bundle and request measurements, not Core Web Vitals or a production traffic benchmark.
+
 ## Recent changes
 
 November 2026:
