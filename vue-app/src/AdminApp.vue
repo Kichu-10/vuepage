@@ -1,7 +1,7 @@
 <template>
   <main v-if="!signedIn" class="admin-login">
     <div class="login-brand-panel">
-      <img src="/src/assets/brand-logo.jpg" alt="B9 Game" />
+      <img :src="b9Logo" alt="B9 Game" />
       <div>
         <span>CONTROL CENTER</span>
         <strong>B9 Game</strong>
@@ -407,6 +407,7 @@
 import { computed, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 import { useSessionStore } from "./stores/session";
 import AdminSidebar from "./components/AdminSidebar.vue";
+import b9Logo from "./assets/b9-logo.webp";
 
 type Account = {
   id: string; username: string; email: string; phone: string; country: string; balance: number; status: string;

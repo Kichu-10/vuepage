@@ -767,8 +767,8 @@ import {
 } from "lucide-vue-next";
 import fish from "./assets/g-fish.webp";
 import slot from "./assets/g-slot.webp";
-import b9Logo from "./assets/b9-logo.jpg";
-import jackpotBanner from "./assets/jackpot-banner.jpg";
+import b9Logo from "./assets/b9-logo.webp";
+import jackpotBanner from "./assets/jackpot-banner.webp";
 import popularCategory from "./assets/01_popular.webp";
 import pgSlotCategory from "./assets/02_pg_slot.webp";
 import spribeCategory from "./assets/03_spribe.webp";

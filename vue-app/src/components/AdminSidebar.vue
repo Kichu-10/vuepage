@@ -1,7 +1,7 @@
 <template>
   <aside class="sidebar">
     <div class="brand">
-      <img src="/src/assets/brand-logo.jpg" alt="" />
+      <img :src="b9Logo" alt="" />
       <div><strong>B9 Game</strong><span>Admin Control</span></div>
     </div>
     <nav class="side-nav" aria-label="Admin navigation">
@@ -25,6 +25,8 @@
 </template>
 
 <script setup lang="ts">
+import b9Logo from "../assets/b9-logo.webp";
+
 defineProps<{
   tab: string;
   stats: { totalUsers: number; pendingKyc: number; pendingRequests: number };
