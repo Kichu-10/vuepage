@@ -142,7 +142,7 @@ export function createGamesRouter(uploadDir) {
       if (pendingOut) return res.status(409).json({ error: "A game balance return is pending. Retry returning funds first." });
 
       transfer = findPendingGameWalletTransfer(user.id, "in");
-      if (transfer && amountText && amountCents !== transfer.amountCents) {
+      if (transfer && amountText && !useExistingGameBalance && amountCents !== transfer.amountCents) {
         return res.status(409).json({
           error: `A previous funding transfer for ${transfer.amountCents / 100} is pending. Retry with that amount to safely complete it.`,
           transactionId: transfer.id,
