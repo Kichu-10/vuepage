@@ -1728,7 +1728,11 @@ async function launchGame(game: Game, amountToFund: number): Promise<void> {
     }, 20_000);
     window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (error) {
-    notify(error instanceof Error ? error.message : "Unable to play");
+    if (amountToFund === 0 && error instanceof Error && error.message.includes("No Game Wallet balance")) {
+      openGameFunding(game);
+    } else {
+      notify(error instanceof Error ? error.message : "Unable to play");
+    }
   } finally {
     launchingGameId.value = null;
   }
