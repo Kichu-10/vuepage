@@ -232,6 +232,19 @@ function legacyRead() {
   }
 }
 
+export function readPlatformSettings() {
+  const settings = db.prepare("SELECT * FROM platform_settings WHERE id = 1").get();
+  if (!settings) return {};
+  return {
+    announcement: settings.announcement,
+    maintenanceMode: Boolean(settings.maintenance_mode),
+    supportEmail: settings.support_email,
+    supportPhone: settings.support_phone,
+    supportHours: settings.support_hours,
+    promotions: JSON.parse(settings.promotions || "[]"),
+  };
+}
+
 export function readDb() {
   const result = {
     users: db.prepare("SELECT * FROM users ORDER BY rowid DESC").all().map(rowUser),
@@ -255,20 +268,9 @@ export function readDb() {
       id: row.id, userId: row.user_id, category: row.category, gameName: row.game_name,
       outcome: row.outcome, amount: dollars(row.amount_cents), reference: row.reference, createdAt: row.created_at,
     })),
-    platformSettings: {},
+    platformSettings: readPlatformSettings(),
     verifications: {},
   };
-  const settings = db.prepare("SELECT * FROM platform_settings WHERE id = 1").get();
-  if (settings) {
-    result.platformSettings = {
-      announcement: settings.announcement,
-      maintenanceMode: Boolean(settings.maintenance_mode),
-      supportEmail: settings.support_email,
-      supportPhone: settings.support_phone,
-      supportHours: settings.support_hours,
-      promotions: JSON.parse(settings.promotions || "[]"),
-    };
-  }
   for (const row of db.prepare("SELECT * FROM kyc_documents").all()) {
     const user = result.users.find((item) => item.id === row.user_id);
     if (user) user.kycDocuments[row.kind] = row.file_path;

@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { readDb, writeDb } from "./database.js";
+import { readDb, readPlatformSettings, writeDb } from "./database.js";
 import { createAuthRouter, createAdminAuthRouter } from "./routers/auth.js";
 import { createWalletRouter } from "./routers/wallet.js";
 import { createAdminRouter } from "./routers/admin.js";
@@ -77,8 +77,7 @@ app.get("/api/payment/details", (_req, res) => {
 });
 
 app.get("/api/platform/settings", (_req, res) => {
-  const db = readDb();
-  const settings = db.platformSettings || {};
+  const settings = readPlatformSettings();
   res.json({
     announcement: settings.announcement || "Welcome to B9 Game. Play responsibly and review applicable terms.",
     maintenanceMode: Boolean(settings.maintenanceMode),

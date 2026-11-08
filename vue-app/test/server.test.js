@@ -128,6 +128,28 @@ test("auth validates registration and authenticates a registered user", async ()
     .expect(400);
 });
 
+test("platform settings are read independently from the application database snapshot", () => {
+  database.writeDb({
+    users: [account],
+    transactions: [],
+    otps: [],
+    verifications: {},
+    notifications: [],
+    supportTickets: [],
+    auditLogs: [],
+    gameResults: [],
+    platformSettings: { announcement: "Maintenance tonight", maintenanceMode: true },
+  });
+  assert.deepEqual(database.readPlatformSettings(), {
+    announcement: "Maintenance tonight",
+    maintenanceMode: true,
+    supportEmail: "",
+    supportPhone: "",
+    supportHours: "",
+    promotions: [],
+  });
+});
+
 test("withdrawal requests reserve available funds", async () => {
   resetDatabase({ users: [{ ...account, balance: 500 }] });
   const token = tokenFor(account);
