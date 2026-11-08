@@ -960,6 +960,31 @@ let googleScriptPromise: Promise<void> | undefined;
 let googleInitialized = false;
 
 const currentPage = computed(() => route.path.slice(1) || "home");
+const pageMetadata = computed(() => {
+  const metadata: Record<string, { title: string; description: string }> = {
+    home: {
+      title: "B9 Game",
+      description: "Play popular games and discover promotions at B9 Game.",
+    },
+    games: {
+      title: "Games | B9 Game",
+      description: "Browse the game lobby, explore categories, and find games at B9 Game.",
+    },
+    promotions: {
+      title: "Promotions | B9 Game",
+      description: "Explore current member promotions and offer terms at B9 Game.",
+    },
+    wallet: {
+      title: "Wallet | B9 Game",
+      description: "Manage your B9 Game balance, deposits, withdrawals, and transactions.",
+    },
+    account: {
+      title: "Account | B9 Game",
+      description: "Manage your B9 Game account, profile, and verification details.",
+    },
+  };
+  return metadata[currentPage.value] || metadata.home;
+});
 const activePromotions = computed(() => promotions.value.filter((promotion) => promotion.active));
 const showGameSections = computed(() => currentPage.value === "games"
   && !activeGame.value
@@ -1038,6 +1063,11 @@ const favoriteNames = computed(() => {
   const names = games.value.filter((game) => favorites.value.includes(game.id)).map((game) => game.name);
   return names.length ? names.join(", ") : "None yet";
 });
+
+watch(pageMetadata, (metadata) => {
+  document.title = metadata.title;
+  document.querySelector<HTMLMetaElement>('meta[name="description"]')?.setAttribute("content", metadata.description);
+}, { immediate: true });
 
 watch([modal, authMode, googleClientId], () => {
   if (modal.value === "auth" && googleClientId.value) {

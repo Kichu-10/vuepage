@@ -116,6 +116,11 @@ test("navigation works and the homepage shows responsive category game sections"
   await expect(page.getByRole("button", { name: "Play Games" })).toBeVisible();
   await page.getByRole("button", { name: "Play Games" }).click();
   await expect(page).toHaveURL(/\/games$/);
+  await expect(page).toHaveTitle("Games | B9 Game");
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+    "content",
+    "Browse the game lobby, explore categories, and find games at B9 Game.",
+  );
 
   await page.getByRole("button", { name: "Home", exact: true }).first().click();
   await expect(page).toHaveURL("/");
