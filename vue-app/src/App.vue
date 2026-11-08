@@ -1658,6 +1658,25 @@ async function play(game: Game): Promise<void> {
   }
   if (launchingGameId.value !== null) return;
   selectedGame.value = game;
+  launchingGameId.value = game.id;
+  try {
+    if (!await refreshGameWallet()) return;
+    launchingGameId.value = null;
+    if (gameWalletBalance.value > 0) {
+      await launchGame(game, 0);
+      return;
+    }
+    openGameFunding(game);
+  } finally {
+    launchingGameId.value = null;
+  }
+}
+function openGameFunding(game: Game): void {
+  if (balance.value < 100) {
+    notify(`Game Wallet is empty. Main Wallet needs at least ${currencyLabel.value} 100 to play.`);
+    return;
+  }
+  selectedGame.value = game;
   gameFundingAmount.value = "";
   modal.value = "game-funding";
 }
