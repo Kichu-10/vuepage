@@ -551,14 +551,22 @@ test("game player uses the available viewport and toggles player fullscreen", as
     },
   }));
   await page.route("**/api/inbox", (route) => route.fulfill({ json: { notifications: [], unreadCount: 0 } }));
-  await page.route("**/api/games/sample-game/launch", (route) => route.fulfill({
-    json: {
-      gameUrl: "https://game.example.test/session",
-      balance: 900,
-      gameWalletBalance: 100,
-    },
-  }));
-  await page.route("**/api/games/wallet", (route) => route.fulfill({ json: { balance: 100 } }));
+  await page.route("**/api/games/*/launch", async (route) => {
+    const gameId = new URL(route.request().url()).pathname.split("/").at(-2) || "";
+    const body = route.request().postDataJSON() as { amount: number };
+    launchRequests.push({ gameId, amount: body.amount });
+    await route.fulfill({
+      json: {
+        gameUrl: `https://game.example.test/${gameId}`,
+        balance: 0,
+        gameWalletBalance: body.amount > 0 ? 100 : 125,
+      },
+    });
+  });
+  await page.route("**/api/games/wallet", (route) => {
+    gameWalletChecks += 1;
+    return route.fulfill({ json: { balance: gameWalletChecks >= 2 ? 125 : 0 } });
+  });
   await page.route("https://game.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: "<title>Test game</title>" }));
 
   await page.setViewportSize({ width: 375, height: 812 });
