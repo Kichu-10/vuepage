@@ -578,6 +578,7 @@ test("game player uses the available viewport and toggles player fullscreen", as
   await fundingDialog.locator('input[type="number"]').fill("100");
   await fundingDialog.getByRole("button", { name: "Continue to game" }).click();
 
+  expect(launchRequests).toEqual([{ gameId: "sample-game", amount: 100 }]);
   const player = page.locator(".page-frame.game-active");
   await expect(player).toBeVisible();
   await expect(page.locator(".topbar")).toBeVisible();
