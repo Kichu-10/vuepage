@@ -41,6 +41,10 @@ test("admin game dashboard lists managed games without provider credentials", as
 });
 
 test("navigation works and the homepage shows responsive category game sections", async ({ page }) => {
+  let paymentDetailsRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/payment/details") paymentDetailsRequests += 1;
+  });
   const games = Array.from({ length: 5 }, (_, index) => ({
         id: `game-${index + 1}`,
         name: `Game ${index + 1}`,
@@ -77,6 +81,7 @@ test("navigation works and the homepage shows responsive category game sections"
   await page.route("**/api/promotions", (route) => route.fulfill({ json: { promotions: [] } }));
 
   await page.goto("/");
+  expect(paymentDetailsRequests).toBe(0);
   await expect(page.locator(".bonus-banner__art")).toBeVisible();
   await expect(page.locator(".bonus-banner__art")).toHaveAttribute("fetchpriority", "high");
   await expect(page.locator(".bonus-banner__art")).toHaveAttribute("decoding", "async");
@@ -152,6 +157,7 @@ test("navigation works and the homepage shows responsive category game sections"
 
   await page.getByRole("button", { name: "Wallet", exact: true }).first().click();
   await expect(page).toHaveURL(/\/wallet$/);
+  await expect.poll(() => paymentDetailsRequests).toBe(1);
   await expect(page.getByRole("heading", { name: "Sign in to manage your wallet" })).toBeVisible();
 });
 

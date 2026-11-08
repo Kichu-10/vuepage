@@ -935,6 +935,7 @@ const paymentProof = ref<File | undefined>();
 const paymentDetails = ref<PaymentDetails>({
   bankName: "", accountName: "", accountNumber: "", iban: "", upiId: "", walletName: "", walletNumber: "", instructions: "",
 });
+let paymentDetailsRequest: Promise<void> | undefined;
 const gameWalletBalance = ref(0);
 const gameWalletCurrency = ref("");
 const gameWalletLoading = ref(false);
@@ -1087,6 +1088,7 @@ watch(() => [route.path, signedIn.value] as const, ([path, isSignedIn]) => {
 });
 
 watch(() => route.path, (path) => {
+  if (path === "/wallet") void loadPaymentDetails();
   if (path !== "/games" && activeGame.value) void closeGame();
   if (path === "/games" && !activeGame.value) {
     if (gameLobbyTab.value === "hot" || showAllGames.value || query.value.trim()) void loadGames();
@@ -1123,11 +1125,7 @@ onMounted(async () => {
   if ((currentPage.value === "games" && !showAllGames.value) || currentPage.value === "home") void loadGameSections();
   else void loadGames();
   token.value = localStorage.getItem("b9_token") || "";
-  try {
-    paymentDetails.value = await fetch("/api/payment/details").then((response) => response.json());
-  } catch {
-    paymentDetails.value.instructions = "Transfer the exact amount, then submit the payment reference and proof.";
-  }
+  if (currentPage.value === "wallet") void loadPaymentDetails();
   try {
     const settings = await fetch("/api/platform/settings").then((response) => response.json());
     if (settings.announcement) platformAnnouncement.value = settings.announcement;
@@ -1157,6 +1155,21 @@ onUnmounted(() => {
   if (promotionCarouselTimer) clearInterval(promotionCarouselTimer);
   clearAvatarUrl();
 });
+
+async function loadPaymentDetails(): Promise<void> {
+  if (paymentDetailsRequest) return paymentDetailsRequest;
+  paymentDetailsRequest = (async () => {
+    try {
+      const response = await fetch("/api/payment/details");
+      if (!response.ok) throw new Error("Could not load payment details");
+      paymentDetails.value = await response.json();
+    } catch {
+      paymentDetails.value.instructions = "Transfer the exact amount, then submit the payment reference and proof.";
+      paymentDetailsRequest = undefined;
+    }
+  })();
+  await paymentDetailsRequest;
+}
 
 async function api(path: string, options: RequestInit = {}): Promise<any> {
   const headers = new Headers(options.headers || {});
