@@ -1227,6 +1227,8 @@ test("launching with existing game funds never debits the main wallet", async ()
       .expect(409);
     assert.match(emptyWallet.body.error, /No Game Wallet balance/);
     assert.equal(launchRequests, 0);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM game_wallet_transfers").get().count, 0);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 0);
 
     providerBalance = 7500;
     const response = await request(app)
