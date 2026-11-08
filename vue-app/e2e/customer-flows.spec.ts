@@ -598,6 +598,14 @@ test("game player uses the available viewport and toggles player fullscreen", as
   await expect(page.locator(".topbar")).toBeVisible();
   await expect(page.getByRole("button", { name: "Back to Games" })).toBeVisible();
   await page.getByRole("button", { name: "Back to Games" }).click();
+  await page.locator(".game-category-section").first().getByRole("button", { name: "Play Another Game" }).click();
+  await expect(page.locator(".page-frame.game-active")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(launchRequests).toEqual([
+    { gameId: "sample-game", amount: 100 },
+    { gameId: "another-game", amount: 0 },
+  ]);
+  await page.getByRole("button", { name: "Back to Games" }).click();
   await page.getByRole("tab", { name: "Recent" }).click();
-  await expect(page.locator(".game-lobby-results .lobby-game-card")).toContainText("Sample Game");
+  await expect(page.getByRole("button", { name: "Play Sample Game" })).toBeVisible();
 });
