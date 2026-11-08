@@ -1683,10 +1683,14 @@ function openGameFunding(game: Game): void {
 async function launchSelectedGame(): Promise<void> {
   const game = selectedGame.value;
   const amountToFund = Number(gameFundingAmount.value);
-  if (!game || !Number.isFinite(amountToFund) || amountToFund < 100 || amountToFund > 100_000_000) {
-    notify(`Choose an amount from ${currencyLabel.value} 100 to ${currencyLabel.value} 100000000`);
+  const maxAmount = Math.min(Math.floor(balance.value * 100) / 100, 100_000_000);
+  if (!game || !Number.isFinite(amountToFund) || amountToFund < 100 || amountToFund > maxAmount) {
+    notify(`Choose an amount from ${currencyLabel.value} 100 to ${currencyLabel.value} ${formatMoney(maxAmount)}`);
     return;
   }
+  await launchGame(game, amountToFund);
+}
+async function launchGame(game: Game, amountToFund: number): Promise<void> {
   if (launchingGameId.value !== null) return;
   launchingGameId.value = game.id;
   try {
