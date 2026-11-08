@@ -9,7 +9,7 @@
     </div>
     <form class="login-card" @submit.prevent="login">
       <div class="login-heading">
-        <span class="shield-icon">BG</span>
+        <img class="login-heading-logo" :src="b9Logo" alt="B9 logo" />
         <div><h1>Welcome back</h1><p>Sign in to your administrator workspace</p></div>
       </div>
       <label>Username<input v-model="username" autocomplete="username" name="admin-username" placeholder="Enter admin username" required /></label>
@@ -1220,7 +1220,7 @@ body { margin: 0; }
   border-radius: 20px; box-shadow: 0 24px 70px rgb(30 67 48 / 12%);
 }
 .login-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 5px; }
-.shield-icon { width: 48px; height: 48px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 14px; color: white; background: linear-gradient(145deg, #1cc78a, #087b4b); font-weight: 900; }
+.login-heading-logo { width: 72px; height: 72px; flex: 0 0 auto; border-radius: 18px; object-fit: cover; }
 .login-heading h1 { font-size: 25px; letter-spacing: -0.5px; }
 .login-heading p { margin-top: 4px; font-size: 13px; }
 .login-card label { display: flex; flex-direction: column; gap: 7px; color: #4b5a51; font-size: 12px; font-weight: 750; }

@@ -1,5 +1,13 @@
 import { expect, test } from "@playwright/test";
 
+test("admin sign-in displays the supplied B9 logo", async ({ page }) => {
+  await page.goto("/admin");
+  const logo = page.getByRole("img", { name: "B9 logo" });
+  await expect(logo).toBeVisible();
+  await expect(logo).toHaveAttribute("src", /b9-logo.*\.webp/);
+  await expect(logo).toHaveJSProperty("naturalWidth", 108);
+});
+
 test("admin game dashboard lists managed games without provider credentials", async ({ page }) => {
   const statistics = {
     totalUsers: 0, activeUsers: 0, totalBalance: 0, pendingRequests: 0,
@@ -27,6 +35,8 @@ test("admin game dashboard lists managed games without provider credentials", as
   await page.goto("/admin");
   await page.getByRole("textbox", { name: "Username" }).fill("admin");
   await page.getByLabel("Password").fill("test-password");
+  await expect(page.getByRole("img", { name: "B9 logo" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "B9 logo" })).toHaveAttribute("src", /b9-logo.*\.webp/);
   await page.getByRole("button", { name: "Sign in securely" }).click();
   await page.getByRole("button", { name: /Games/ }).click();
   await expect(page.getByRole("heading", { name: "Game and Provider Management", level: 2 })).toBeVisible();
