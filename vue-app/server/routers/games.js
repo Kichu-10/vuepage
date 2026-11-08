@@ -149,6 +149,29 @@ export function createGamesRouter(uploadDir) {
           pendingAmount: transfer.amountCents / 100,
         });
       }
+      if (!transfer && useExistingGameBalance) {
+        const wallet = await getProviderGameWalletBalance(player.playerId, player.currency);
+        if (wallet.balance <= 0) {
+          return res.status(409).json({ error: "No Game Wallet balance is available. Choose an amount to fund this game." });
+        }
+        const result = await launchTransferWalletGame({
+          gameId,
+          playerId: player.playerId,
+          currency: player.currency,
+          amountCents: 0,
+          transferId: randomUUID(),
+          platform,
+        });
+        markGamePlayerCreated(user.id);
+        const currentUser = readUserById(user.id);
+        return res.json({
+          gameUrl: result.gameUrl,
+          balance: currentUser?.balance ?? 0,
+          gameWalletBalance: result.balanceCents / 100,
+          fundedAmount: 0,
+          transactionId: null,
+        });
+      }
       if (!transfer) {
         if (!validAmount) {
           return res.status(400).json({ error: "Game wallet funding must be between 100 and 100000000" });
