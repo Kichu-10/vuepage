@@ -1650,7 +1650,7 @@ function toggleFavorite(id: string): void {
     ? favorites.value.filter((favorite) => favorite !== id)
     : [...favorites.value, id];
 }
-function play(game: Game): void {
+async function play(game: Game): Promise<void> {
   if (requireSignIn()) return;
   if (game.status !== 0) {
     notify("This game is currently unavailable");
