@@ -1180,6 +1180,74 @@ test("HUIDU maps supplier game UIDs and launches with an atomic wallet credit", 
   }
 });
 
+test("launching with existing game funds never debits the main wallet", async () => {
+  resetDatabase({ users: [{ ...account, country: "IN", balance: 200 }, admin] });
+  database.saveManagedProvider({ code: "pg", name: "PGSoft", enabled: true });
+  database.addManagedGame({
+    providerCode: "pg",
+    externalId: "existing-balance-game",
+    name: "Existing Balance Game",
+    enabled: true,
+    providerStatus: 0,
+  });
+  const player = database.ensureGamePlayer(account.id, "INR");
+  database.markGamePlayerCreated(account.id);
+  const originalFetch = globalThis.fetch;
+  let providerBalance = 0;
+  let launchRequests = 0;
+  globalThis.fetch = async (url, options) => {
+    const requestUrl = new URL(String(url));
+    if (requestUrl.pathname !== "/game/v2") throw new Error(`Unexpected HUIDU URL ${url}`);
+    const payload = decodeHuiduRequest(options);
+    assert.equal(payload.member_account, player.playerId);
+    assert.equal(payload.currency_code, "INR");
+    assert.equal(payload.credit_amount, "0.00");
+    if (!payload.game_uid) {
+      return huiduResponse({
+        after_amount: (providerBalance / 100).toFixed(2),
+        transfer_status: 1,
+      });
+    }
+
+    launchRequests += 1;
+    assert.equal(payload.game_uid, "existing-balance-game");
+    return huiduResponse({
+      game_launch_url: "https://games.provider.test/existing-balance",
+      after_amount: (providerBalance / 100).toFixed(2),
+      transfer_status: 1,
+    });
+  };
+
+  try {
+    const headers = { Authorization: `Bearer ${tokenFor(account)}` };
+    const emptyWallet = await request(app)
+      .post("/api/games/existing-balance-game/launch")
+      .set(headers)
+      .send({ amount: 0 })
+      .expect(409);
+    assert.match(emptyWallet.body.error, /No Game Wallet balance/);
+    assert.equal(launchRequests, 0);
+
+    providerBalance = 7500;
+    const response = await request(app)
+      .post("/api/games/existing-balance-game/launch")
+      .set(headers)
+      .send({ amount: 0, platform: 1 })
+      .expect(200);
+    assert.equal(response.body.gameUrl, "https://games.provider.test/existing-balance");
+    assert.equal(response.body.balance, 200);
+    assert.equal(response.body.gameWalletBalance, 75);
+    assert.equal(response.body.fundedAmount, 0);
+    assert.equal(response.body.transactionId, null);
+    assert.equal(launchRequests, 1);
+    assert.equal(database.readDb().users.find((user) => user.id === account.id).balance, 200);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM game_wallet_transfers").get().count, 0);
+    assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM ledger_entries").get().count, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("game funding rejects invalid decimal precision before contacting HUIDU", async () => {
   resetDatabase({ users: [{ ...account, country: "IN", balance: 500 }, admin] });
   const originalFetch = globalThis.fetch;
