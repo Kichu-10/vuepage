@@ -62,7 +62,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { ChevronLeft, ChevronRight } from "lucide-vue-next";
-import artwork from "../assets/bonus-banner-art.png";
+import artwork from "../assets/bonus-banner-art.webp";
 import badge from "../assets/b9-banner-logo.svg";
 
 const props = defineProps<{
