@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { readDb, readPlatformSettings, writeDb } from "./database.js";
+import { readDb, readPlatformSettings, readUserById, writeDb } from "./database.js";
 import { createAuthRouter, createAdminAuthRouter } from "./routers/auth.js";
 import { createWalletRouter } from "./routers/wallet.js";
 import { createAdminRouter } from "./routers/admin.js";
@@ -118,8 +118,7 @@ function admin(req, res, next) {
   if (!ipIsAllowed(req)) {
     return res.status(403).json({ error: "Admin access is not permitted from this network" });
   }
-  const db = readDb();
-  const user = db.users.find((item) => item.id === req.user.id);
+  const user = readUserById(req.user.id);
   if (!user || user.role !== "admin" || user.status !== "active") {
     return res.status(403).json({ error: "Admin access required" });
   }
