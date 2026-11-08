@@ -116,6 +116,11 @@ test("auth validates registration and authenticates a registered user", async ()
     .send({ username: "newuser", password: "pass1234" })
     .expect(200);
   assert.ok(login.body.token);
+  const session = await request(app)
+    .get("/api/auth/me")
+    .set("Authorization", `Bearer ${login.body.token}`)
+    .expect(200);
+  assert.equal(session.body.user.username, "newuser");
 
   await request(app)
     .post("/api/auth/register")

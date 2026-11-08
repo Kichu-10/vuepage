@@ -213,6 +213,16 @@ function rowTransaction(row) {
   };
 }
 
+export function readUserById(id) {
+  const row = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+  if (!row) return undefined;
+  const user = rowUser(row);
+  for (const document of db.prepare("SELECT kind, file_path FROM kyc_documents WHERE user_id = ?").all(id)) {
+    user.kycDocuments[document.kind] = document.file_path;
+  }
+  return user;
+}
+
 function legacyRead() {
   try {
     return JSON.parse(fs.readFileSync(legacyJsonFile, "utf8"));

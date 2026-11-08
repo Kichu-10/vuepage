@@ -6,7 +6,7 @@ import { createHash, randomInt, randomUUID } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
 import nodemailer from "nodemailer";
 import twilio from "twilio";
-import { readDb, writeDb } from "../database.js";
+import { readDb, readUserById, writeDb } from "../database.js";
 import { authenticate, jwtSecret, ipIsAllowed } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { logger } from "../config/logger.js";
@@ -204,7 +204,7 @@ export function createAuthRouter() {
   });
 
   router.get("/me", authenticate, (req, res) => {
-    const user = readDb().users.find((item) => item.id === req.user.id);
+    const user = readUserById(req.user.id);
     if (!user || user.status !== "active") return res.status(403).json({ error: "Account unavailable" });
     res.json({ user: publicUser(user) });
   });
