@@ -769,11 +769,11 @@ import fish from "./assets/g-fish.jpg";
 import slot from "./assets/g-slot.jpg";
 import b9Logo from "./assets/b9-logo.jpg";
 import jackpotBanner from "./assets/jackpot-banner.jpg";
-import popularCategory from "./assets/01_popular.png";
-import pgSlotCategory from "./assets/02_pg_slot.png";
-import spribeCategory from "./assets/03_spribe.png";
-import fishingCategory from "./assets/04_fishing.png";
-import inOutCategory from "./assets/05_inout.png";
+import popularCategory from "./assets/01_popular.webp";
+import pgSlotCategory from "./assets/02_pg_slot.webp";
+import spribeCategory from "./assets/03_spribe.webp";
+import fishingCategory from "./assets/04_fishing.webp";
+import inOutCategory from "./assets/05_inout.webp";
 
 type Modal = "menu" | "promo" | "profile" | "inbox" | "auth" | "kyc" | "transactions" | "favorites" | "support" | "game-funding" | null;
 type AuthUser = { id: string; username: string; phone: string; email: string; country: string; kycStatus: string; role: "user" | "admin"; balance: number; status: string; createdAt: string; lastLoginAt: string | null; googlePictureUrl?: string };
