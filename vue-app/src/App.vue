@@ -765,8 +765,8 @@ import {
   LogOut, Mail, Search, ShieldCheck, Star, UserRound,
   Volume2, Wallet, X,
 } from "lucide-vue-next";
-import fish from "./assets/g-fish.jpg";
-import slot from "./assets/g-slot.jpg";
+import fish from "./assets/g-fish.webp";
+import slot from "./assets/g-slot.webp";
 import b9Logo from "./assets/b9-logo.jpg";
 import jackpotBanner from "./assets/jackpot-banner.jpg";
 import popularCategory from "./assets/01_popular.webp";
