@@ -21,13 +21,16 @@
       <section v-if="signedIn && activePromotions.length" class="promo-frame" aria-label="Member promotions">
         <div class="hero" :class="{ 'hero-with-art': homePromotion?.bannerUrl && !homePromotion.bannerIncludesText, 'hero-full-creative': homePromotion?.bannerUrl && homePromotion.bannerIncludesText }">
           <button v-if="homePromotion?.bannerUrl && homePromotion.bannerIncludesText" class="hero-creative-button" :aria-label="`View ${homePromotion.title}`" @click="navigateTo('/promotions')">
-            <img class="hero-full-creative-image" :src="homePromotion.bannerUrl" alt="" />
+            <img class="hero-full-creative-image" :src="homePromotion.bannerUrl" alt="" loading="eager" fetchpriority="high" decoding="async" />
           </button>
           <img
             v-else-if="homePromotion?.bannerUrl"
             class="hero-art"
             :src="homePromotion.bannerUrl"
             alt=""
+            loading="eager"
+            fetchpriority="high"
+            decoding="async"
           />
           <div v-if="!homePromotion?.bannerIncludesText || !homePromotion?.bannerUrl" class="hero-copy">
             <p class="hero-title"><span>{{ homePromotion?.title }}</span></p>
@@ -417,7 +420,7 @@
           <article v-for="(promotion, index) in activePromotions" :key="promotion.id" class="promotion-banner" :class="{ 'promotion-full-creative': promotion.bannerIncludesText && promotion.bannerUrl }">
             <template v-if="promotion.bannerIncludesText && promotion.bannerUrl">
               <button class="promotion-complete-link" :aria-label="`Ask about ${promotion.title}`" @click="askAboutPromotion(promotion)">
-                <img class="promotion-banner-complete" :src="promotion.bannerUrl" alt="" />
+                <img class="promotion-banner-complete" :src="promotion.bannerUrl" alt="" :loading="index === 0 ? 'eager' : 'lazy'" decoding="async" />
               </button>
               <div class="promotion-full-details">
                 <h2>{{ promotion.title }}</h2>
@@ -427,7 +430,7 @@
               </div>
             </template>
             <template v-else>
-              <img v-if="promotion.bannerUrl" class="promotion-banner-art" :src="promotion.bannerUrl" alt="" />
+              <img v-if="promotion.bannerUrl" class="promotion-banner-art" :src="promotion.bannerUrl" alt="" :loading="index === 0 ? 'eager' : 'lazy'" decoding="async" />
               <div class="promotion-banner-copy">
                 <span class="promotion-number">OFFER {{ String(index + 1).padStart(2, "0") }}</span>
                 <span v-if="promotion.reward" class="promotion-value">{{ promotion.reward }}</span>
