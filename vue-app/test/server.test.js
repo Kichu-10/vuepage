@@ -153,6 +153,22 @@ test("platform settings are read independently from the application database sna
   });
 });
 
+test("database snapshots attach KYC documents to the correct user", () => {
+  const users = [
+    { ...account, kycDocuments: { identity: "user-identity.jpg" } },
+    { ...admin, kycDocuments: { address: "admin-address.jpg" } },
+  ];
+  resetDatabase({ users });
+
+  const snapshot = database.readDb();
+  assert.deepEqual(snapshot.users.find((user) => user.id === account.id).kycDocuments, {
+    identity: "user-identity.jpg",
+  });
+  assert.deepEqual(snapshot.users.find((user) => user.id === admin.id).kycDocuments, {
+    address: "admin-address.jpg",
+  });
+});
+
 test("inbox reads are limited to the user's newest notifications and mark only that user's rows", async () => {
   const notifications = Array.from({ length: 105 }, (_, index) => ({
     id: `notification-${index}`,

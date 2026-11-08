@@ -276,8 +276,9 @@ export function readDb() {
     platformSettings: readPlatformSettings(),
     verifications: {},
   };
+  const usersById = new Map(result.users.map((user) => [user.id, user]));
   for (const row of db.prepare("SELECT * FROM kyc_documents").all()) {
-    const user = result.users.find((item) => item.id === row.user_id);
+    const user = usersById.get(row.user_id);
     if (user) user.kycDocuments[row.kind] = row.file_path;
   }
   for (const row of db.prepare("SELECT * FROM verifications").all()) {
