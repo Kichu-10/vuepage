@@ -1,6 +1,15 @@
 <template>
   <section class="bonus-banner" :aria-label="`${currentSlide.label} banner`">
-    <img class="bonus-banner__art" :src="artwork" alt="B9 Game bonus promotion with a woman, Pakistani flag, gifts, and cash" />
+    <img
+      class="bonus-banner__art"
+      :src="artwork"
+      alt="B9 Game bonus promotion with a woman, Pakistani flag, gifts, and cash"
+      width="571"
+      height="532"
+      loading="eager"
+      fetchpriority="high"
+      decoding="async"
+    />
     <template v-if="currentSlide.id === 'bonus'">
       <p class="bonus-banner__line bonus-banner__l1">Get <b>100%</b></p>
       <p class="bonus-banner__line bonus-banner__l2">Bonus</p>

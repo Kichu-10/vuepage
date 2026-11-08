@@ -78,9 +78,11 @@ test("navigation works and the homepage shows responsive category game sections"
 
   await page.goto("/");
   await expect(page.locator(".bonus-banner__art")).toBeVisible();
+  await expect(page.locator(".bonus-banner__art")).toHaveAttribute("fetchpriority", "high");
+  await expect(page.locator(".bonus-banner__art")).toHaveAttribute("decoding", "async");
   await expect(page.locator(".page-home .categories .category")).toHaveCount(5);
   await expect(page.locator(".page-home .categories .category")).toHaveText(["Popular", "PG Slot", "Spribe", "Fishing", "InOut"]);
-  await expect(page.locator(".page-home .categories .category").nth(4).locator("img")).toHaveAttribute("src", /05_inout\.png/);
+  await expect(page.locator(".page-home .categories .category").nth(4).locator("img")).toHaveAttribute("src", /05_inout\.webp/);
   await expect(page.locator(".page-home .home-game-card")).toHaveCount(10);
   await expect(page.locator(".page-home .home-game-card img").first()).toHaveAttribute("src", /g-aviator\.jpg/);
   await expect(page.locator(".brand-emblem")).toBeVisible();
@@ -104,7 +106,7 @@ test("navigation works and the homepage shows responsive category game sections"
   await expect(page.locator(".bottom-nav button svg")).toHaveCount(5);
   await expect(page.locator(".bottom-nav button svg").first()).toBeVisible();
   await expect(page.locator("body").evaluate((body) => body.scrollWidth <= window.innerWidth)).resolves.toBe(true);
-  await expect(page.locator(".brand-emblem")).toHaveAttribute("src", /b9-logo.*\.jpg/);
+  await expect(page.locator(".brand-emblem")).toHaveAttribute("src", /b9-logo.*\.webp/);
   await expect(page.locator(".bonus-banner")).toHaveCSS("aspect-ratio", "1240 / 548");
   await expect(page.locator(".bonus-banner")).toHaveAttribute("aria-label", "first deposit bonus banner");
   await page.getByRole("button", { name: "Next banner" }).click();
@@ -197,7 +199,7 @@ test("games lobby filters enabled games by provider, search, hot, and favorites 
   const games = [
     {
       id: "pg-slot", name: "PG Slot One", provider: "PGSoft", providerCode: "PG",
-      gameType: "Slot", category: "Slots", isPopular: true, thumbnail: "/src/assets/g-slot.jpg", status: 0,
+      gameType: "Slot", category: "Slots", isPopular: true, thumbnail: "/src/assets/g-slot.webp", status: 0,
     },
     {
       id: "spribe-mini", name: "Spribe Mini One", provider: "Spribe", providerCode: "SPRIBE",
