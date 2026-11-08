@@ -85,6 +85,7 @@ test("navigation works and the homepage shows responsive category game sections"
   await expect(page.locator(".page-home .categories .category").nth(4).locator("img")).toHaveAttribute("src", /05_inout\.webp/);
   await expect(page.locator(".page-home .home-game-card")).toHaveCount(10);
   await expect(page.locator(".page-home .home-game-card img").first()).toHaveAttribute("src", /g-aviator\.jpg/);
+  await expect(page.locator(".page-home .home-game-card img").first()).toHaveAttribute("decoding", "async");
   await expect(page.locator(".brand-emblem")).toBeVisible();
   await expect(page.locator(".header-actions svg")).toHaveCount(3);
   await expect(page.locator(".header-actions svg").first()).toBeVisible();

@@ -148,7 +148,7 @@
               @keydown.enter="play(game)"
               @keydown.space.prevent="play(game)"
             >
-              <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" />
+              <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" decoding="async" />
               <div class="game-shade" />
               <span v-if="game.isPopular" class="home-popular-badge"><Flame :size="11" fill="currentColor" /> Hot</span>
               <span class="game-name">{{ launchingGameId === game.id ? "Opening..." : game.name }}</span>
@@ -270,7 +270,7 @@
               @click="selectGameProvider(provider.code)"
             >
               <span class="game-provider-logo">
-                <img v-if="provider.logo" :src="provider.logo" alt="" loading="lazy" />
+                <img v-if="provider.logo" :src="provider.logo" alt="" loading="lazy" decoding="async" />
                 <template v-else>{{ providerInitials(provider.name) }}</template>
               </span>
               <span>{{ provider.name }}</span>
@@ -306,7 +306,7 @@
                       @keydown.enter="play(game)"
                       @keydown.space.prevent="play(game)"
                     >
-                      <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" />
+                      <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" decoding="async" />
                       <span v-if="game.isPopular" class="lobby-hot-badge">Hot</span>
                       <span class="lobby-game-name">{{ launchingGameId === game.id ? "Opening..." : game.name }}</span>
                       <button class="favorite-button" :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'" @click.stop="toggleFavorite(game.id)">
@@ -352,7 +352,7 @@
                   @keydown.enter="play(game)"
                   @keydown.space.prevent="play(game)"
                 >
-                  <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" />
+                  <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" decoding="async" />
                   <span v-if="game.isPopular" class="lobby-hot-badge">Hot</span>
                   <span class="lobby-game-name">{{ launchingGameId === game.id ? "Opening..." : game.name }}</span>
                   <button class="favorite-button" :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'" @click.stop="toggleFavorite(game.id)">
@@ -384,7 +384,7 @@
                   @keydown.enter="play(game)"
                   @keydown.space.prevent="play(game)"
                 >
-                  <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" />
+                  <img v-if="game.thumbnail" :src="game.thumbnail" :alt="game.name" loading="lazy" decoding="async" />
                   <span v-if="game.isPopular" class="lobby-hot-badge">Hot</span>
                   <span class="lobby-game-name">{{ game.name }}</span>
                   <button class="favorite-button" :aria-label="favorites.includes(game.id) ? 'Remove favorite' : 'Add favorite'" @click.stop="toggleFavorite(game.id)">
