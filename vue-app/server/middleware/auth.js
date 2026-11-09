@@ -18,8 +18,7 @@ export function authenticate(req, res, next) {
 }
 
 export function clientIp(req) {
-  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0]?.trim();
-  return forwarded || req.ip || req.socket.remoteAddress || "";
+  return req.socket.remoteAddress || "";
 }
 
 export function ipIsAllowed(req) {

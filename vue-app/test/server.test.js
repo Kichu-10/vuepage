@@ -30,7 +30,7 @@ const { createGamesRouter } = await import("../server/routers/games.js");
 const { createPromotionsRouter } = await import("../server/routers/promotions.js");
 const { createProfileRouter } = await import("../server/routers/profile.js");
 const { createInboxRouter } = await import("../server/routers/inbox.js");
-const { authenticate } = await import("../server/middleware/auth.js");
+const { authenticate, ipIsAllowed } = await import("../server/middleware/auth.js");
 const { decryptHuiduPayload, displayCurrency, encryptHuiduPayload } = await import("../server/services/game-provider.js");
 const testAesKey = process.env.HUIDU_AES_KEY;
 
@@ -67,6 +67,24 @@ const admin = {
 function tokenFor(user) {
   return jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET);
 }
+
+test("admin IP allowlist ignores client-supplied forwarded headers", () => {
+  const previousAllowlist = process.env.ADMIN_ALLOWED_IPS;
+  try {
+    process.env.ADMIN_ALLOWED_IPS = "198.51.100.10";
+    const request = {
+      headers: { "x-forwarded-for": "203.0.113.20" },
+      ip: "203.0.113.20",
+      socket: { remoteAddress: "198.51.100.10" },
+    };
+    assert.equal(ipIsAllowed(request), true);
+
+    process.env.ADMIN_ALLOWED_IPS = "203.0.113.20";
+    assert.equal(ipIsAllowed(request), false);
+  } finally {
+    process.env.ADMIN_ALLOWED_IPS = previousAllowlist;
+  }
+});
 
 function decodeHuiduRequest(options) {
   const outer = JSON.parse(options.body);

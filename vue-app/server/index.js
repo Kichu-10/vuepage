@@ -21,6 +21,7 @@ import { createProfileRouter } from "./routers/profile.js";
 import { createInboxRouter } from "./routers/inbox.js";
 import { backupSqlite } from "./database.js";
 import { logger } from "./config/logger.js";
+import { ipIsAllowed } from "./middleware/auth.js";
 
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env.local") });
 if (process.env.SENTRY_DSN) {
@@ -123,19 +124,6 @@ function admin(req, res, next) {
     return res.status(403).json({ error: "Admin access required" });
   }
   next();
-}
-
-function clientIp(req) {
-  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0]?.trim();
-  return forwarded || req.ip || req.socket.remoteAddress || "";
-}
-
-function ipIsAllowed(req) {
-  const allowlist = String(process.env.ADMIN_ALLOWED_IPS || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return allowlist.length === 0 || allowlist.includes(clientIp(req));
 }
 
 app.get("/uploads/:filename", auth, admin, (req, res) => {
